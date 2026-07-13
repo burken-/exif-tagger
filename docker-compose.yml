@@ -1,0 +1,12 @@
+services:
+  exif-tagger:
+    build: .
+    image: exif-tagger:latest
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro        # Mount config (copy from example first)
+      - ./images:/data/images:ro                 # Mount your image directory here
+    environment:
+      EXIFTAGGER_ROOT_DIRECTORY: "/data/images"
+      # Uncomment and set if you want to override api_key via env:
+      # OPENAI_API_KEY: "sk-your-key-here"
+    command: ["-v"]                            # Verbose mode; omit for quiet output

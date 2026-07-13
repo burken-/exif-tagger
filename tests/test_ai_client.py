@@ -1,0 +1,124 @@
+"""Tests for the AI client module (with mocked OpenAI API)."""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+from PIL import Image
+
+from exif_tagger.ai_client import (
+    _build_prompt,
+    _parse_response,
+    tag_image_with_ai,
+)
+from exif_tagger.models.schema import ModelConfig, TagDefinition
+
+
+class TestBuildPrompt:
+    """Test that the AI prompt is built correctly from tag definitions."""
+
+    def test_includes_all_tags(self):
+        tags = {
+            "landscape": TagDefinition(
+                description="Natural scenery", threshold=0.7
+            ),
+            "portrait": TagDefinition(
+                description="Person face visible", threshold=0.8
+            ),
+        }
+
+        prompt = _build_prompt(tags)
+        assert "landscape" in prompt
+        assert "portrait" in prompt
+        assert "Natural scenery" in prompt
+        assert "Person face visible" in prompt
+
+    def test_includes_thresholds(self):
+        tags = {"tag1": TagDefinition(description="desc", threshold=0.6)}
+        prompt = _build_prompt(tags)
+        assert "threshold: 0.6" in prompt
+
+    def test_request_json_format(self):
+        """Prompt should ask for JSON output."""
+        prompt = _build_prompt({"test": TagDefinition(description="x", threshold=0.5)})
+        assert '"results"' in prompt
+        assert "tag_name" in prompt
+        assert "score" in prompt
+
+
+class TestParseResponse:
+    """Test parsing of AI response strings to TaggingResponse."""
+
+    def test_valid_json_response(self):
+        response_str = json.dumps({
+            "results": [
+                {"tag_name": "landscape", "score": 0.95, "reason": "Mountains visible"},
+                {"tag_name": "portrait", "score": 0.2, "reason": "No faces seen"},
+            ]
+        })
+
+        result = _parse_response(response_str)
+        assert len(result.results) == 2
+        assert result.results[0].tag_name == "landscape"
+        assert result.results[0].score == 0.95
+        assert result.results[1].tag_name == "portrait"
+        assert result.results[1].score == 0.2
+
+    def test_json_in_markdown_code_blocks(self):
+        """Model may wrap JSON in ```json ... ``` blocks – should be handled."""
+        response_str = '```json\n{"results": [{"tag_name": "x", "score": 0.8}]}\n```\n'
+        result = _parse_response(response_str)
+        assert len(result.results) == 1
+        assert result.results[0].tag_name == "x"
+
+    def test_invalid_json_raises_value_error(self):
+        with pytest.raises(ValueError, match="did not return valid JSON"):
+            _parse_response("This is not JSON at all!!")
+
+    def test_score_clamped_to_valid_range(self):
+        """Scores outside 0-1 should be clamped."""
+        response_str = json.dumps({
+            "results": [
+                {"tag_name": "test", "score": -0.5},   # Clamped to 0
+                {"tag_name": "test2", "score": 1.5},    # Clamped to 1
+                {"tag_name": "test3", "score": 0.5},    # Unchanged
+            ]
+        })
+        result = _parse_response(response_str)
+        assert result.results[0].score == 0.0
+        assert result.results[1].score == 1.0
+        assert result.results[2].score == 0.5
+
+
+class TestTagImageWithAi:
+    """Integration test for tag_image_with_ai using mock OpenAI client."""
+
+    def test_tags_image_successfully(self, sample_jpeg, mock_openai):
+        """Simulate a successful AI call with the mock client."""
+        model_config = ModelConfig(
+            base_url="https://api.test.com/v1",
+            model_name="test-model",
+        )
+
+        tags = {
+            "landscape": TagDefinition(description="Natural scenery", threshold=0.7),
+        }
+
+        result = tag_image_with_ai(model_config, sample_jpeg, tags)
+        # Should return at least one result from the mock
+        assert len(result.results) >= 1
+
+
+class TestNoTagsSkipsAiCall:
+    """Verify that no AI call is made when there are zero tags."""
+
+    def test_empty_tags_no_call(self):
+        """With empty tag definitions, should skip AI entirely."""
+        model_config = ModelConfig(
+            base_url="https://api.test.com/v1",
+            model_name="test-model",
+        )
+
+        result = tag_image_with_ai(model_config, __import__("pathlib").Path("/dev/null"), {})
+        assert len(result.results) == 0
