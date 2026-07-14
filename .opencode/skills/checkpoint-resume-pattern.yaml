@@ -1,0 +1,122 @@
+# Skill: Checkpoint & Resume Pattern (Progress Persistence)
+name: checkpoint-resume-pattern
+description: >
+  Implementering av progress-persistens för att hantera underbrotten körningar,
+  återupptaga från var man slutade eller --force för att börja om helt.
+
+version: "1.0"  
+domain: config.py (checkpoint-funktionerna), main.py (användning)
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# CONTEXT (vilken kunskap behövs innan implementation)
+# ──────────────────────────────────────────────────────────────────────────────
+context_files:
+  - src/exif_tagger/models/schema.py          # ImageCheckpoint, CheckpointData
+  - specs/SPEC_TEMPLATE.md
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# TECHNICAL SPECIFICATIONS (must-follow during implementation)
+# ──────────────────────────────────────────────────────────────────────────────
+specifications:
+
+  checkpoint_location: |
+    Checkpoint-filen sparas i root_directory som konfigurerats av användaren.
+    
+      Path(root_directory) / ".exif-tagger-checkpoint.json"
+    
+    CRITICAL: Filen ligger INTE i projektets rotkatalog (source code). Den 
+    skapas i ANVÄNDARNS bildkatalog, vilket är korrekt eftersom den innehåller
+    statusinformation för just den körningen.
+
+  checkpoint_format: |
+    JSON-struktur som lagras i .exif-tagger-checkpoint.json:
+    
+    ```json
+    {
+      "version": 1,                          // Schema version (increment vid breaking changes)
+      "created_at": "2024-01-15T10:30:00Z",  // ISO timestamp
+      "root_directory": "/absolute/path/to/images",  // Resolved absolute path
+      "total_images": 150,                   // Antal bilder vid checkpoint-sparande
+      "processed": 42,                       // Antal färdigprocessade bilder
+      "images": {                            // Status per bild (key = absolut sökväg)
+        "/absolute/path/to/image1.jpg": {
+          "path": "/absolute/path/to/image1.jpg",
+          "status": "done|pending|failed",   // current state
+          "matched_tags": ["landscape"],     // vilka taggar som matchades (tom lista om failed)
+          "error": null                      // felmeddelande vid status=="failed"
+        }
+      }
+    }
+    ```
+
+  resume_logic: |
+    RESUME-FLOW (standardbeteende):
+    
+    1. Ladda checkpoint från root_directory/.exif-tagger-checkpoint.json
+    2. Verifiera att checkpointens root_directory MATCHAR den aktuella körningen
+       - Om inte matchande → starta helt nytt (ignore old checkpoint)
+    3. Rita alla "done"-status-bilder som already-tagged och HOPP ÖVER dem
+    4. Rita alla "failed" eller icke-ankomna bilder som TO_PROCESS
+    5. Kör AI-analys + EXIF-skrivning för to_process-listan
+    
+    FORCE-FLOW (--force flagga):
+    
+    1. IGNORE existing checkpoint helt (ränta inte ens om filen finns)
+    2. Starta från beginning – alla bilder i scan-resultatet processas igen
+
+  persistence_strategy: |
+    CHECKPOINT UPPDATERAS EFTER VARJE BILD, INTE bara vid slut av körning.
+    
+    Varför? Om processen avbryts (Ctrl+C, crash, power loss) kan användaren 
+    resume exakt där de slutade – istället för att börja om från scratch med
+    1000+ bilder som redan var taggade.
+    
+    Implementering i main.py:
+      - Efter varje framgångsrik bild-skrivning: save_checkpoint()
+      - Vid fel på en bild: spara failed-status och fortsätt till nästa bild
+    
+    CRITICAL: save_checkpoint skriver över hela filen (atomic write via tempfile 
+    + rename skulle vara optimalt men är inte kritiskt just nu).
+
+  checkpoint_sanity_checks: |
+    vid LADDNING av checkpoint, verifiera:
+    
+    - Filen finns? → Ja = proceed, Nej = returnera tom dict {}
+    - JSON-parsning lyckas? → Nej = logga varning, returnera tom dict {}
+    - version == 1? → Nej (annan schema) = returnera tom dict {}  
+    - root_directory matchar nuvarande körning? → Nej = returnera tom dict {}
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# IMPLEMENTATION CHECKLIST (coder-agent verifierar mot detta)
+# ──────────────────────────────────────────────────────────────────────────────
+implementation_checklist:
+  - "save_checkpoint() använder json.dump med indent=2 för läsbarhet"
+  - "Checkpoint-filen skrivs till Path(root_directory).resolve() / '.exif-tagger-checkpoint.json'"  
+  - "load_checkpoint() returnerar tom dict {} vid corrupt JSON eller missing file"
+  - "get_resume_info() returnerar None om inga bilder har status done/failed ännu"
+  - "Checkpoint-data matchar CheckpointData-modellen (version, created_at, etc.)"
+  - "main.py anropar save_checkpoint efter varje bild-skrivning"
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# TESTING GUIDE (tester som verifierar korrekt implementation)
+# ──────────────────────────────────────────────────────────────────────────────
+testing_guide:
+  required_tests:
+    - name: test_save_and_load_roundtrip
+      verify: data after load matches exactly what was saved
+    
+    - name: test_missing_checkpoint_file  
+      verify: returns empty dict without raising exception
+    
+    - name: test_corrupt_json_file
+      verify: returns empty dict (graceful degradation)
+    
+    - name: test_different_root_directory_ignored
+      verify: checkpoint from different root directory is ignored on load
+    
+    - name: test_resume_info_returns_none_for_empty_run
+      verify: no images processed yet → None returned

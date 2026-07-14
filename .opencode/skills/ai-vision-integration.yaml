@@ -1,0 +1,119 @@
+# Skill: AI Vision Integration (OpenAI-Compatible)
+name: ai-vision-integration
+description: >
+  Implementering av vision-modellanrop via OpenAI-compatible API med batch-strategi B,
+  retry-logik och strukturerad respons-parsing.
+
+version: "1.0"
+domain: ai_client.py
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# CONTEXT (vilken kunskap behövs innan implementation)
+# ──────────────────────────────────────────────────────────────────────────────
+context_files:
+  - src/exif_tagger/models/schema.py          # TagDefinition, ModelConfig, TaggingResponse
+  - specs/SPEC_TEMPLATE.md                     # Spec-format som följs
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# TECHNICAL SPECIFICATIONS (must-follow during implementation)
+# ──────────────────────────────────────────────────────────────────────────────
+specifications:
+  
+  batch_strategy_b: |
+    Skicka EN vision-fråga per bild MED ALLA taggar i promptsen.
+    Modellen evaluerar varje tagg oberoende och returnerar confidence scores.
+    
+    Fördelar mot strategi A (1 anrop/tagg):
+      - 80% lägre API-kostnad vid 5+ taggar per bild
+      - Snabbare total körning (fler bilder/minut)
+    
+    Nackdelar:
+      - Svårare prompt-design (måste hålla sig inom max_tokens-budget)
+
+  prompt_construction: |
+    Bygg prompten enligt följande struktur – ALDRIG ändra denna ordning:
+    
+    1. Rollen: "Analyze this image and determine which of the following tags apply."
+    2. Instruera om JSON-format: "Respond ONLY with valid JSON in this exact format:"
+    3. Lista alla taggar med description + threshold (alfabetisk ordning)
+    4. Exempel på expected JSON-output
+    
+    CRITICAL: Modellen MÅSTE returnera JSON-sträng. Hantera markdown-kodblock
+    (` ``json `...` `` `) i responsen genom att extrahera innehållet.
+
+  retry_logic: |
+    - MAX_RETRIES = 3 (hård konstant)
+    - RETRY_BASE_DELAY = 2.0 sekunder (exponential backoff)
+    - Delay per försök: BASE_DELAY * 2^(attempt-1) → [2s, 4s, 8s]
+    - Efter MAX_RETRIES: raise RuntimeError med felkontext om vilken bild som misslyckades
+    
+    ORSAKER SOM SKA TRIGGERA RETRY:
+      - TimeoutError
+      - ConnectionError  
+      - HTTP 503/502/429 (rate limit)
+    
+    ORSAKER SOM INTE SKA RETRY:
+      - 401 Unauthorized → avbryt hela körningen (API-key fel)
+      - 400 Bad Request → logga och avbryt (fel modell/namn)
+
+  response_parsing: |
+    Responsen parsas till TaggingResponse enligt följande:
+    
+    1. Extrahera JSON från markdown-block om det finns
+    2. Parsa "results"-arrayen
+    3. För varje entry: clamp score till [0.0, 1.0] FÖRE pydantic-validering
+       (TagResult.score har ge=0.0 le=1.0 – värdet -0.5 kastar ValidationError)
+    
+    FALLBACK vid parsfel:
+      - Logga varning med första 500 tecken av responsen
+      - Returnera TaggingResponse(results=[], summary=None)
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# IMPLEMENTATION CHECKLIST (coder-agent verifierar mot detta)
+# ──────────────────────────────────────────────────────────────────────────────
+implementation_checklist:
+  - "Modulen importerar OpenAI från openai-paketet på top-level"
+  - "_build_prompt() returnerar prompt med alla taggar i alfabetisk ordning"
+  - "_parse_response() hanterar markdown-block runt JSON"
+  - "Score clamping sker innan TagResult-skapande (MAX 0.0, MIN 1.0)"
+  - "_call_vision_api har retry-loop med exponential backoff"
+  - "tag_image_with_ai() returnerar TaggingResponse med minst en result-entry vid framgång"
+  - "Ingen print()-statement – bara logging.getLogger(__name__)"
+
+---
+# ──────────────────────────────────────────────────────────────────────────────
+# TESTING GUIDE (tester som verifierar korrekt implementation)
+# ──────────────────────────────────────────────────────────────────────────────
+testing_guide:
+  mock_strategy: |
+    Använd monkeypatch.setattr("exif_tagger.ai_client.OpenAI", _MockOpenAIClient)
+    
+    Mock-klienten MÅSTE returnera structurerad respons där:
+      response.choices[0].message.content är en sträng (inte MagicMock)
+    
+    Exempel på mock-response-struktur:
+    ```python
+    class _Msg:
+        content = json.dumps({"results": [{"tag_name": "x", "score": 0.9}]})
+    
+    class _Choice:
+        message = _Msg()
+    
+    result.choices = [_Choice()]
+    ```
+
+  required_tests:
+    - name: test_build_prompt_includes_all_tags
+      verify: prompt contains all tag names and descriptions
+    
+    - name: test_parse_response_valid_json  
+      verify: returns TaggingResponse with correct scores/tags
+    
+    - name: test_score_clamping_negative_value
+      verify: score -0.5 becomes 0.0 (not ValueError)
+    
+    - name: test_retry_after_transient_failure
+      verify: API call succeeds on attempt 2 after initial failure
