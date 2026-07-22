@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -174,3 +175,44 @@ class RunSummary(BaseModel):
     failed: int
     failed_apis: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Schedule configuration (persisted to schedules.json)
+# ---------------------------------------------------------------------------
+class ScheduleModel(BaseModel):
+    """A single scheduled processing job."""
+
+    id: str = Field(
+        default_factory=lambda: f"schedule_{int(time.time())}_{hash(str(time.time())) % 10000}"
+    )
+    name: str = Field(description="Human-readable schedule name")
+    folder: str = Field(description="Root directory to scan for images")
+    max_images: int | None = Field(default=None, description="Max images per run (None = all)")
+    interval_hours: float | None = Field(
+        default=None, ge=0.1, description="Interval in hours (for simple intervals)"
+    )
+    cron_expression: str | None = Field(
+        default=None, description="Cron expression (e.g. '0 2 * * *')"
+    )
+    enabled: bool = Field(default=True)
+    last_run_at: str | None = Field(default=None, description="ISO timestamp of last run")
+    last_status: str | None = Field(default=None, description="'success', 'failed', or None")
+
+    @field_validator("cron_expression", mode="before")
+    @classmethod
+    def _validate_cron(cls, value):  # type: ignore[no-untyped-def]
+        if value is None:
+            return None
+        parts = str(value).strip().split()
+        if len(parts) != 5:
+            raise ValueError("Cron expression must have exactly 5 fields (minute hour day month weekday)")
+        return value
+
+    model_config = ConfigDict(extra='allow')
+
+
+class ScheduleEntry(ScheduleModel):
+    """ScheduleModel with next_run_at computed."""
+
+    next_run_at: str | None = Field(default=None, description="ISO timestamp of next scheduled run")
