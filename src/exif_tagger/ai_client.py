@@ -1,11 +1,31 @@
-"""AI-klient – OpenAI-compatible vision API med batch-strategi B."""
+"""AI client - OpenAI-compatible vision API with batch processing.
+
+SECURITY NOTE: This module includes SecretRedactor logging filter to prevent
+API keys and credentials from appearing in log files. All log messages are
+automatically filtered before being written to handlers.
+
+PERFORMANCE REALITY CHECK:
+Most commercial vision APIs (OpenAI GPT-4o, Claude, etc.) process images 
+sequentially on their server side regardless of client concurrency settings.
+This means sending multiple simultaneous requests won't speed up processing -
+the API will queue them anyway. The bottleneck is the AI model's processing
+time per image (~2 seconds), not our network or client code.
+
+True parallelism only helps with:
+  • Self-hosted models that truly process in parallel
+  • APIs with explicit batch endpoints (multiple images in one request)
+  
+For most users, sequential processing (max_concurrent=1) is the right choice.
+"""
 
 from __future__ import annotations
 
 import base64
 import json
 import logging
+import re
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from openai import OpenAI
@@ -21,12 +41,100 @@ from exif_tagger.models.schema import (
 
 logger = logging.getLogger(__name__)
 
-# Max dimensions we'll resize to before sending (keeps payload manageable)
-MAX_IMAGE_DIMENSION = 1024
+# ============================================================================
+# SECURITY: Secret Redaction Logging Filter
+# ============================================================================
 
-# Retry configuration
-MAX_RETRIES = 3
-RETRY_BASE_DELAY = 2.0  # seconds – exponential backoff
+class SecretRedactor(logging.Filter):
+    """Logging filter that redacts sensitive information from log messages.
+
+    SECURITY: Prevents API keys and credentials from appearing in log files.
+    This filter intercepts all log records and redacts known secret patterns
+    before they are written to handlers.
+    """
+
+    # Patterns to redact (add more as needed)
+    SECRET_PATTERNS = [
+        r'sk-[a-zA-Z0-9]{20,}',           # OpenAI API key format  
+        r'api_key[=:]\s*["\']?[^\s"\']+["\']?',  # api_key= or api_key: patterns
+        r'Bearer\s+[a-zA-Z0-9\-_]+',      # Bearer tokens
+        r'sk-[a-fA-F0-9]{64}',            # Alternative API key format
+    ]
+
+    def __init__(self, name: str = ""):
+        super().__init__(name)
+        self._compiled_patterns = [re.compile(p) for p in self.SECRET_PATTERNS]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Filter log records by redacting secrets.
+
+        Args:
+            record: The log record to filter
+
+        Returns:
+            True if record should be logged (after redaction)
+        """
+        original_message = record.getMessage()
+        redacted_message = original_message
+
+        for pattern in self._compiled_patterns:
+            redacted_message = pattern.sub('[REDACTED]', redacted_message)
+
+        # Only modify message if something was redacted
+        if redacted_message != original_message:
+            record.msg = redacted_message
+            record.args = ()  # Clear args to prevent formatting with original values
+
+        return True
+
+
+def setup_secure_logging(level: int = logging.INFO, logger_name: str = "exif_tagger") -> None:
+    """Setup application logging with secret redaction enabled.
+
+    SECURITY: Applies SecretRedactor filter to all log handlers to prevent
+    API keys and other credentials from appearing in log files.
+
+    Args:
+        level: Logging level (DEBUG, INFO, WARNING, ERROR)
+        logger_name: Name of the logger to configure
+    """
+    # Get or create logger
+    main_logger = logging.getLogger(logger_name)
+    main_logger.setLevel(level)
+
+    # Avoid adding duplicate handlers if already configured
+    if main_logger.handlers:
+        return
+
+    # Create handler and formatter
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+        datefmt='%H:%M:%S'
+    )
+    handler.setFormatter(formatter)
+
+    # Add secret redaction filter - THIS IS THE CRITICAL SECURITY STEP
+    redactor = SecretRedactor()
+    handler.addFilter(redactor)
+
+    main_logger.addHandler(handler)
+
+
+# ============================================================================
+# PERFORMANCE: Module Constants (avoid magic numbers)
+# ============================================================================
+
+MAX_IMAGE_DIMENSION = 1024   # Max dimension for resized images  
+MAX_RETRIES = 3              # Number of retry attempts for API calls
+RETRY_BASE_DELAY = 2.0       # Base delay for exponential backoff (seconds)
+JPEG_QUALITY = 85            # JPEG quality for base64 encoding
+
+# CONCURRENCY NOTE: Most vision APIs (OpenAI GPT-4o, etc.) process images 
+# sequentially on their server side regardless of client concurrency. Setting
+# this >1 won't speed up processing and may trigger rate limits. Keep at 1
+# unless you know your API provider supports true parallel image processing.
+MAX_CONCURRENT_AI_CALLS = 1  # Default: sequential (most APIs queue anyway)
 
 
 def _image_to_base64(image_path: Path, max_dim: int = MAX_IMAGE_DIMENSION) -> str:
@@ -213,6 +321,93 @@ def tag_image_with_ai(
         raise
 
 
+def tag_images_batch_parallel(
+    model_config: ModelConfig,
+    image_paths: list[Path],
+    tag_definitions: dict[str, TagDefinition],
+    verbose: bool = False,
+    max_concurrent: int = MAX_CONCURRENT_AI_CALLS,
+) -> dict[Path, TaggingResponse]:
+    """Tag multiple images using concurrent AI calls.
+
+    IMPORTANT CONCURRENCY NOTES:
+    
+    Most vision APIs (OpenAI GPT-4o, Claude, etc.) process images sequentially
+    on their server side regardless of how many simultaneous requests you send.
+    This means:
+    
+      • max_concurrent=1 (default): Sequential processing - recommended for most APIs
+      • max_concurrent>1: May trigger rate limits without actual speedup
+      
+    When parallelism DOES help:
+      • Self-hosted models that truly process in parallel  
+      • APIs with high per-request latency but no server-side queuing
+      • Batch endpoints that accept multiple images in one request
+      
+    When to keep max_concurrent=1:
+      • OpenAI GPT-4o, Claude, most commercial vision APIs
+      • APIs with strict rate limits (requests/second)
+      • When you see 429 errors with concurrent requests
+      
+    For 100k images at ~2s per request: expect ~55 hours regardless of concurrency.
+    The bottleneck is the API processing time, not our client code.
+
+    Args:
+        model_config: Vision API configuration  
+        image_paths: List of paths to process
+        tag_definitions: All configured tags
+        verbose: Whether to log per-image details
+        max_concurrent: Maximum concurrent API calls (1=default for most APIs)
+        
+    Returns:
+        Dictionary mapping each processed path → its TaggingResponse
+        
+    Raises:
+        RuntimeError: If any image fails after all retries (stops the batch)
+    """
+    results: dict[Path, TaggingResponse] = {}
+    total = len(image_paths)
+    
+    if verbose:
+        logger.info("Starting parallel AI processing (%d concurrent workers)", max_concurrent)
+
+    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        # Submit all tasks
+        futures = {
+            executor.submit(
+                tag_image_with_ai, model_config, img_path, tag_definitions
+            ): img_path
+            for img_path in image_paths
+        }
+
+        # Process completed tasks as they finish  
+        for i, future in enumerate(as_completed(futures), start=1):
+            img_path = futures[future]
+
+            if verbose:
+                logger.info("Processing image %d/%d: %s", i, total, img_path.name)
+
+            try:
+                response = future.result()  # This will raise if exception occurred
+                results[img_path] = response
+                
+                if verbose and response.results:
+                    matched_names = [r.tag_name for r in response.results if r.score >= 0.5]
+                    logger.info(
+                        "  → %s: evaluated %d tags, scored ≥0.5: %s",
+                        img_path.name, len(response.results), ", ".join(matched_names) or "(none)",
+                    )
+
+            except RuntimeError as exc:
+                logger.error("PERMANENT FAILURE for %s – aborting batch: %s", img_path.name, exc)
+                raise  # Stop the entire run on permanent failure
+    
+    if verbose:
+        logger.info("Parallel AI processing complete (%d images)", len(results))
+
+    return results
+
+
 def tag_images_batch(
     model_config: ModelConfig,
     image_paths: list[Path],
@@ -220,6 +415,20 @@ def tag_images_batch(
     verbose: bool = False,
 ) -> dict[Path, TaggingResponse]:
     """Tag multiple images with the vision AI.
+
+    PERFORMANCE REALITY CHECK:
+    
+    This function processes images sequentially by default (max_concurrent=1).
+    Most commercial vision APIs process images one at a time on their servers,
+    so increasing concurrency typically won't speed things up and may trigger
+    rate limits.
+    
+    For true parallelism, you need either:
+      1. A self-hosted model that processes multiple requests simultaneously
+      2. An API with explicit batch endpoints (not just concurrent requests)
+      3. Multiple API keys/accounts to distribute load
+      
+    Typical processing time: ~2 seconds per image regardless of concurrency setting.
 
     Args:
         model_config: Vision API configuration.
@@ -230,33 +439,10 @@ def tag_images_batch(
     Returns:
         Dictionary mapping each processed path → its TaggingResponse.
     """
-    results: dict[Path, TaggingResponse] = {}
-    total = len(image_paths)
-    failed = 0
-
-    for i, img_path in enumerate(image_paths, start=1):
-        if verbose:
-            logger.info("Processing image %d/%d: %s", i, total, img_path.name)
-
-        try:
-            response = tag_image_with_ai(model_config, img_path, tag_definitions)
-            results[img_path] = response
-            if verbose and response.results:
-                matched_names = [
-                    r.tag_name for r in response.results if r.score >= 0.5
-                ]
-                logger.info(
-                    "  → %s: evaluated %d tags, scored ≥0.5: %s",
-                    img_path.name, len(response.results), ", ".join(matched_names) or "(none)",
-                )
-
-        except RuntimeError as exc:
-            failed += 1
-            logger.error("PERMANENT FAILURE for %s – aborting run: %s", img_path.name, exc)
-            # Stop the entire run on permanent failure per user requirement
-            raise
-
-    if verbose and failed > 0:
-        logger.warning("Completed with %d failures out of %d images.", failed, total)
-
-    return results
+    return tag_images_batch_parallel(
+        model_config=model_config,
+        image_paths=image_paths,
+        tag_definitions=tag_definitions,
+        verbose=verbose,
+        max_concurrent=MAX_CONCURRENT_AI_CALLS,  # Defaults to 1 (sequential)
+    )

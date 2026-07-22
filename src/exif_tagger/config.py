@@ -1,7 +1,14 @@
-"""Konfigurationshantering – läser config.yaml och överskrider med env vars."""
+"""Configuration management – reads config.yaml with env var overrides.
+
+SECURITY NOTE: This module uses yaml.safe_load() exclusively to prevent arbitrary
+Python object instantiation attacks via crafted YAML files (e.g., !!python/object
+payloads). Never use yaml.load() or yaml.unsafe_load() in this codebase.
+"""
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -11,11 +18,40 @@ import yaml
 from exif_tagger.models.schema import Config, ImageCheckpoint
 
 
-# Prefix för miljövariabler som överskrider config-filen
+logger = logging.getLogger(__name__)
+
+# Prefix for environment variables that override config file
 ENV_PREFIX = "EXIFTAGGER_"
 
-# Default-sökväg till konfigfilen
+# Default path to config file  
 DEFAULT_CONFIG_PATH = Path("config.yaml")
+
+# Whitelist of allowed environment variable names (security)
+ALLOWED_ENV_KEYS = frozenset({
+    "EXIFTAGGER_CONFIG_FILE",
+    "EXIFTAGGER_ROOT_DIRECTORY", 
+    "EXIFTAGGER_MODEL_BASE_URL",
+    "EXIFTAGGER_MODEL_MODEL_NAME",
+    "EXIFTAGGER_MODEL_API_KEY",
+    "EXIFTAGGER_MODEL_MAX_TOKENS",
+    "EXIFTAGGER_MODEL_TEMPERATURE",
+    "EXIFTAGGER_EXCLUDE_PATTERNS",
+})
+
+
+def _validate_env_key(env_key: str) -> bool:
+    """Validate that environment variable is in the allowed whitelist.
+
+    SECURITY: Prevents arbitrary env var injection into configuration by only
+    allowing known safe environment variables to override config settings.
+
+    Args:
+        env_key: Environment variable name to validate
+
+    Returns:
+        True if the key is in the allowed whitelist
+    """
+    return env_key in ALLOWED_ENV_KEYS
 
 
 def _env_key_to_config_key(env_key: str) -> list[str]:
@@ -24,6 +60,8 @@ def _env_key_to_config_key(env_key: str) -> list[str]:
 
     Uses a fixed mapping for known env → config key paths. Unknown keys map to
     their lowercase snake_case form as top-level keys.
+
+    SECURITY: Only called after _validate_env_key() confirms the key is safe.
     """
     # Fixed mappings: env_key (lowercase after prefix) → list of YAML path segments
     _MAPPING = {
@@ -50,10 +88,28 @@ def _set_nested(data: dict[str, Any], keys: list[str], value: Any) -> None:
 def load_config(config_path: str | Path | None = None) -> Config:
     """Load configuration from YAML file with env-var overrides.
 
+    SECURITY NOTE: yaml.safe_load() is used exclusively to prevent arbitrary
+    Python object instantiation attacks via crafted YAML files (e.g., 
+    !!python/object/apply:os.system payloads). Never use yaml.load() or 
+    yaml.unsafe_load() in this codebase.
+
+    Environment variables are validated against a whitelist before being applied
+    as configuration overrides, preventing injection of arbitrary settings.
+
     Priority (highest to lowest):
-      1. Environment variables (EXIFTAGGER_*)
-      2. Values in config.yaml
+      1. Validated environment variables (EXIFTAGGER_*)
+      2. Values in config.yaml (safe-loaded)
       3. Defaults defined in Pydantic models
+
+    Args:
+        config_path: Path to configuration file, or None for default location
+
+    Returns:
+        Validated Config object with all settings resolved
+
+    Raises:
+        ValueError: If YAML contains unsafe content or config is invalid
+        FileNotFoundError: If specified config file doesn't exist
     """
     # Determine config file path
     if config_path is None:
@@ -78,9 +134,14 @@ def load_config(config_path: str | Path | None = None) -> Config:
     elif config_path is not None and str(config_file) != str(DEFAULT_CONFIG_PATH):
         raise FileNotFoundError(f"Config file not found: {config_file}")
 
-    # 2. Override with environment variables (highest priority)
+    # 2. Override with validated environment variables (highest priority)
     for env_key, env_value in os.environ.items():
         if env_key.startswith(ENV_PREFIX):
+            # SECURITY: Only process whitelisted environment variables
+            if not _validate_env_key(env_key):
+                logger.debug("Ignoring non-whitelisted env var: %s", env_key)
+                continue
+                
             config_keys = _env_key_to_config_key(env_key)
 
             # Cast the value appropriately based on target key
@@ -143,12 +204,71 @@ def _parse_list(value: str) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Security utilities (path validation to prevent traversal attacks)
+# ---------------------------------------------------------------------------
+
+def validate_path_within_base(target_path: str | Path, base_directory: str | Path) -> Path:
+    """Validate that a target path resolves within the base directory.
+
+    SECURITY: Prevents path traversal attacks by ensuring all file operations
+    stay within intended directory boundaries. Must be used for ALL file I/O
+    where user-controlled paths are involved.
+
+    Args:
+        target_path: The path to validate (file or directory)
+        base_directory: The base directory that must contain the target
+
+    Returns:
+        Resolved absolute Path if valid
+
+    Raises:
+        ValueError: If path traversal attempt detected (target outside base)
+        FileNotFoundError: If target path doesn't exist
+    """
+    target = Path(target_path).resolve()
+    base = Path(base_directory).resolve()
+
+    # Check if target exists first
+    if not target.exists():
+        raise FileNotFoundError(f"Target path does not exist: {target}")
+
+    # Verify target is within base directory
+    try:
+        target.relative_to(base)
+        return target
+    except ValueError:
+        raise ValueError(
+            f"Path traversal blocked: '{target}' is outside allowed directory '{base}'"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Checkpoint helpers (persisted to JSON next to the config file)
 # ---------------------------------------------------------------------------
 
 def get_checkpoint_path(root_directory: str | Path) -> Path:
-    """Return path where checkpoint data is stored."""
-    return Path(root_directory) / ".exif-tagger-checkpoint.json"
+    """Return path where checkpoint data is stored.
+
+    SECURITY: Ensures checkpoint file stays within root directory by using
+    direct concatenation rather than user-supplied paths.
+
+    Args:
+        root_directory: The root directory for the image collection
+
+    Returns:
+        Absolute path to checkpoint file (guaranteed within root_directory)
+    """
+    base = Path(root_directory).resolve()
+    checkpoint_name = ".exif-tagger-checkpoint.json"
+
+    # Build candidate path - parent must equal base to prevent traversal
+    candidate = base / checkpoint_name
+    if candidate.parent != base:
+        raise ValueError(
+            f"Checkpoint path would be outside root directory: {candidate}"
+        )
+
+    return candidate
 
 
 def load_checkpoint(
@@ -156,17 +276,27 @@ def load_checkpoint(
 ) -> dict[str, ImageCheckpoint]:
     """Load existing checkpoint if it exists and matches current run params.
 
-    Returns empty dict if no valid checkpoint found (new run or resume not possible).
-    """
-    cp_path = get_checkpoint_path(root_directory)
-    if not cp_path.exists():
-        return {}
+    SECURITY: Validates checkpoint path before reading to prevent traversal attacks.
 
+    Args:
+        root_directory: The root directory for the image collection
+        total_images: Expected number of images (for sanity check)
+
+    Returns:
+        Dict mapping absolute path strings → ImageCheckpoint objects, or empty dict
+    """
     try:
-        import json
+        cp_path = get_checkpoint_path(root_directory)
+
+        # SECURITY: Validate checkpoint file stays within root directory
+        validated_path = validate_path_within_base(cp_path, root_directory)
+        
+        if not validated_path.exists():
+            return {}
+
         from datetime import datetime, timezone
 
-        with open(cp_path, "r", encoding="utf-8") as fh:
+        with open(validated_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
 
         # Basic sanity check
@@ -190,7 +320,8 @@ def load_checkpoint(
                     continue
         return result
 
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError, ValueError, FileNotFoundError) as exc:
+        logger.debug("Checkpoint load skipped: %s", exc)
         return {}
 
 
@@ -199,10 +330,20 @@ def save_checkpoint(
     total_images: int,
     images: dict[str, ImageCheckpoint],
 ) -> None:
-    """Persist checkpoint data to disk."""
+    """Persist checkpoint data to disk.
+
+    SECURITY: Uses validated checkpoint path from get_checkpoint_path() which
+    ensures the file stays within the root directory boundary.
+
+    Args:
+        root_directory: The root directory for the image collection
+        total_images: Total number of images in the collection
+        images: Dict mapping absolute path strings → ImageCheckpoint objects
+    """
     import json
     from datetime import datetime, timezone
 
+    # Get validated checkpoint path (guaranteed within root_directory)
     cp_path = get_checkpoint_path(root_directory)
     processed_count = sum(
         1 for img in images.values() if img.status == "done"
