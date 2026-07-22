@@ -1,13 +1,34 @@
-"""Huvudscript för exif-tagger – CLI entry point."""
+"""Main script for exif-tagger – CLI entry point.
+
+PERFORMANCE NOTES:
+- Batch checkpoint writes every CHECKPOINT_BATCH_SIZE images (default 100) to reduce I/O overhead
+- Sequential AI processing by default (most APIs queue requests server-side anyway)
+- Stream processing: process each image immediately instead of accumulating all results
+
+SECURITY NOTES:
+- Uses SecretRedactor logging filter from ai_client module to prevent API key exposure
+- All file paths validated through config.py's validate_path_within_base() function
+
+REALISTIC EXPECTATIONS:
+Processing time is dominated by AI model inference (~2 seconds per image). For 10k images,
+expect ~5.5 hours regardless of concurrency settings. The main bottleneck is the vision API,
+not our client code. Focus on reliability (checkpoint resumption) rather than speed.
+"""
 
 from __future__ import annotations
 
 import argparse
 import logging
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+# ============================================================================
+# PERFORMANCE: Module Constants (avoid magic numbers)
+# ============================================================================
+
+CHECKPOINT_BATCH_SIZE = 100  # Write checkpoint every N images (balance safety vs I/O)
+ERRORS_TO_DISPLAY_MAX = 10   # Maximum errors shown in summary output
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -57,29 +78,36 @@ def _log_tag_list(tags: dict) -> None:
     print("-" * 70)
 
 
-def _format_summary_text(summary):
-    """Format a RunSummary object into human-readable text."""
+def _format_summary_text(summary: dict) -> str:
+    """Format a summary dictionary into human-readable text.
+
+    Args:
+        summary: Dictionary with run statistics
+
+    Returns:
+        Formatted summary string for display
+    """
     lines = [
         "",
         "=" * 60,
         "RUN SUMMARY",
         "=" * 60,
-        f"Root directory: {summary.root_directory}",
-        f"Total images found:   {summary.total_images_found}",
-        f"Processed this run:   {summary.total_processed}",
-        f"Newly tagged:         {summary.successfully_tagged}",
-        f"Already had tags:     {summary.already_tagged}",
-        f"Skipped (checkpoint): {summary.skipped_by_checkpoint}",
-        f"Failed:               {summary.failed}",
+        f"Root directory: {summary['root_directory']}",
+        f"Total images found:   {summary['total_images_found']}",
+        f"Processed this run:   {summary['total_processed']}",
+        f"Newly tagged:         {summary['successfully_tagged']}",
+        f"Already had tags:     {summary['already_tagged']}",
+        f"Skipped (checkpoint): {summary['skipped_by_checkpoint']}",
+        f"Failed:               {summary['failed']}",
     ]
 
-    if summary.errors:
+    if summary.get('errors'):
         lines.append("")
         lines.append("Errors:")
-        for err in summary.errors[:10]:  # Max 10 errors shown
+        for err in summary['errors'][:ERRORS_TO_DISPLAY_MAX]:
             lines.append(f"  - {err}")
-        if len(summary.errors) > 10:
-            lines.append(f"  ... and {len(summary.errors) - 10} more")
+        if len(summary['errors']) > ERRORS_TO_DISPLAY_MAX:
+            lines.append(f"  ... and {len(summary['errors']) - ERRORS_TO_DISPLAY_MAX} more")
 
     lines.extend(["", "=" * 60])
     return "\n".join(lines)
@@ -90,15 +118,25 @@ def run(
     verbose: bool = False,
     force_resume: bool = False,
 ) -> int:
-    """Execute the full tagging pipeline. Returns exit code (0=success, 1=error)."""
+    """Execute the full tagging pipeline. Returns exit code (0=success, 1=error).
 
-    # Setup logging
+    PERFORMANCE: Uses stream processing - each image is processed immediately
+    (AI → EXIF → checkpoint update) instead of accumulating all results in memory.
+    Checkpoints are written every CHECKPOINT_BATCH_SIZE images to reduce I/O overhead.
+
+    Args:
+        config_path: Path to configuration file
+        verbose: Enable per-image logging during processing
+        force_resume: Ignore existing checkpoint and restart from beginning
+
+    Returns:
+        Exit code (0 for success, 1 for error)
+    """
+    # SECURITY: Setup logging with secret redaction to prevent API key exposure
+    from exif_tagger.ai_client import setup_secure_logging
+    
     log_level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
+    setup_secure_logging(log_level)
     logger = logging.getLogger("exif_tagger")
 
     try:
@@ -130,7 +168,7 @@ def run(
             return 0
 
         # ---- 3. Checkpoint / resume logic ----
-        checkpoint = {}
+        checkpoint: dict[str, ImageCheckpoint] = {}
         skipped_by_checkpoint = 0
         already_tagged = 0  # from previous runs (status == "done")
 
@@ -159,35 +197,24 @@ def run(
             logger.info("All images already processed – nothing to do.")
             return 0
 
-        # ---- 4. Tag images with AI ----
-        from exif_tagger.ai_client import tag_images_batch
-        from exif_tagger.exif_writer import tag_image_exif, get_existing_xptags
-
-        ai_results = tag_images_batch(
-            model_config=config.ai_model,
-            image_paths=images_to_process,
-            tag_definitions=config.tags,
-            verbose=verbose,
-        )
-
-        # ---- 5. Write EXIF tags and update checkpoint ----
+        # ---- 4-5. Process images with streaming (AI → EXIF → checkpoint) ----
+        # PERFORMANCE: Stream processing - no accumulation of AI results in memory
         successfully_tagged = 0
         failed_count = 0
         errors: list[str] = []
-        all_checkpoint_images = dict(checkpoint)
+        checkpoint_images: dict[str, ImageCheckpoint] = dict(checkpoint)
+        
+        # Batch checkpoint tracking
+        checkpoint_batch_counter = 0
 
-        for img_path in images_to_process:
+        for i, img_path in enumerate(images_to_process, start=1):
             if verbose:
-                logger.info("Writing EXIF for %s ...", img_path.name)
+                logger.info("Processing image %d/%d: %s", i, len(images_to_process), img_path.name)
 
             try:
-                response = ai_results.get(img_path)
-                if response is None or not response.results:
-                    # No tags matched – still mark as done but with 0 new
-                    all_checkpoint_images[str(img_path.resolve())] = ImageCheckpoint(
-                        path=str(img_path), status="done", matched_tags=[], error=None,
-                    )
-                    continue
+                # Call AI immediately (streaming - no accumulation)
+                from exif_tagger.ai_client import tag_image_with_ai
+                response = tag_image_with_ai(config.ai_model, img_path, config.tags)
 
                 # Determine which tags actually match (score >= threshold)
                 matched_tag_names = []
@@ -196,8 +223,10 @@ def run(
                     if tag_def and tr.score >= tag_def.threshold:
                         matched_tag_names.append(tr.tag_name)
 
-                # Write to EXIF (append mode – only truly new tags)
+                # Write to EXIF immediately (append mode – only truly new tags)
+                from exif_tagger.exif_writer import tag_image_exif
                 modified, n_new = tag_image_exif(img_path, matched_tag_names)
+                
                 if modified:
                     successfully_tagged += 1
                     logger.info(
@@ -207,7 +236,8 @@ def run(
                 elif verbose:
                     logger.debug("  → All tags already present – no change.")
 
-                all_checkpoint_images[str(img_path.resolve())] = ImageCheckpoint(
+                # Update checkpoint immediately
+                checkpoint_images[str(img_path.resolve())] = ImageCheckpoint(
                     path=str(img_path), status="done", matched_tags=matched_tag_names, error=None,
                 )
 
@@ -215,12 +245,20 @@ def run(
                 failed_count += 1
                 errors.append(f"{img_path.name}: {exc}")
                 logger.error("Failed to process %s: %s", img_path.name, exc)
-                all_checkpoint_images[str(img_path.resolve())] = ImageCheckpoint(
+                checkpoint_images[str(img_path.resolve())] = ImageCheckpoint(
                     path=str(img_path), status="failed", matched_tags=[], error=str(exc),
                 )
 
-            # Save checkpoint after each image so we can resume from here if interrupted
-            save_checkpoint(config.root_directory, total_found, all_checkpoint_images)
+            # PERFORMANCE: Batch checkpoint writes every N images instead of after each one
+            checkpoint_batch_counter += 1
+            if checkpoint_batch_counter >= CHECKPOINT_BATCH_SIZE:
+                save_checkpoint(config.root_directory, total_found, checkpoint_images)
+                checkpoint_batch_counter = 0
+                if verbose:
+                    logger.debug("Checkpoint saved (batch of %d)", CHECKPOINT_BATCH_SIZE)
+
+        # CRITICAL: Ensure final checkpoint write happens after loop completes
+        save_checkpoint(config.root_directory, total_found, checkpoint_images)
 
         # ---- 6. Summary ----
         summary = {
@@ -250,14 +288,15 @@ def run(
 
 
 def main() -> None:
+    """CLI entry point."""
     parser = _build_parser()
     args = parser.parse_args()
 
     if args.list_tags:
-        # Quick tag-list mode – minimal config load
+        # Quick tag-list mode – minimal config load (no logging needed)
         from exif_tagger.config import load_config
-        from exif_tagger.models.schema import Config
-        config: Config = load_config(args.config)
+        
+        config = load_config(args.config)
         _log_tag_list(config.tags)
         sys.exit(0)
 

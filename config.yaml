@@ -1,0 +1,24 @@
+# Configuration for testing with local fastflowlm model
+root_directory: "/app/exif-tagger/testimages"
+
+model:
+  base_url: "http://100.118.58.20:52625/v1"
+  model_name: "gemma4-it:e4b"
+  api_key: "fastflowlm"
+  max_tokens: 500
+  temperature: 0.1
+
+tags:
+  landscape:
+    description: "Natural scenery – mountains, forests, water, open vistas"
+    threshold: 0.7
+  
+  portrait:
+    description: "A person's face clearly visible and in focus"
+    threshold: 0.8
+  
+  architecture:
+    description: "Buildings, bridges, towers, or constructed structures"
+    threshold: 0.6
+
+exclude_patterns: []

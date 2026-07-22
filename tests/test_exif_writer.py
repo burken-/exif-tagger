@@ -63,9 +63,14 @@ class TestGetExistingXptags:
             result = get_existing_xptags(path)
 
         assert result == set()
-        # Verify subprocess.run was called for reading
+        # Verify subprocess.run was called for reading (with security parameters)
         mock_run.assert_called_once_with(
-            ["exiftool", "-s3", "-XPTags", str(path)], capture_output=True, text=True, timeout=10
+            ["exiftool", "-s3", "-XPTags", str(path)], 
+            capture_output=True, 
+            text=True, 
+            timeout=10,
+            check=False,  # SECURITY: Don't raise on non-zero exit
+            shell=False,  # SECURITY: Explicitly disabled for command injection prevention
         )
 
     @patch("exif_tagger.exif_writer.subprocess.run")
