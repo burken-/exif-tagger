@@ -49,3 +49,9 @@ htmlcov/
 
 # Test images
 testimages/
+
+# Opencode planning artifacts (generated, temporary)
+.opencode/plans/
+
+# Generated design/spec docs
+docs/superpowers/
