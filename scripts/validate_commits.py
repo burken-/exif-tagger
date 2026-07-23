@@ -8,6 +8,8 @@ Example:
     python validate_commits.py main HEAD --allow-merge-commits
 """
 
+import argparse
+import re
 import subprocess
 import sys
 
@@ -27,7 +29,6 @@ ALLOWED_TYPES = [
 ]
 
 # Conventional Commits pattern: <type>: <description> (min 10 chars)
-import re
 
 COMMIT_PATTERN = re.compile(
     r"^(?P<type>" + "|".join(ALLOWED_TYPES) + r"): (?P<desc>.{10,})$"
@@ -83,14 +84,15 @@ def validate_commit(commit_line: str, allow_merge_commits: bool = False):
 
 
 def main():
-    args = sys.argv[1:]
-    if len(args) < 2:
-        print("Usage: python validate_commits.py <base_ref> <head_ref> [--allow-merge-commits]")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description="Validate Conventional Commits format")
+    parser.add_argument("base_ref", help="Base ref to start checking from (e.g., main)")
+    parser.add_argument("head_ref", help="Head ref to end at (e.g., HEAD or branch name)")
+    parser.add_argument("--allow-merge-commits", action="store_true", help="Skip merge commits")
+    args = parser.parse_args()
 
-    base_ref = args[0]
-    head_ref = args[1]
-    allow_merge_commits = "--allow-merge-commits" in args
+    base_ref = args.base_ref
+    head_ref = args.head_ref
+    allow_merge_commits = args.allow_merge_commits
 
     print(f"Validating commits from {base_ref}..{head_ref}")
     print("=" * 65)

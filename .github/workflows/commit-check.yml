@@ -29,8 +29,18 @@ jobs:
             echo "base=${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
             echo "head=HEAD" >> "$GITHUB_OUTPUT"
           else
-            # For pushes to main, validate the last commit only (or full range if needed)
-            echo "base=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
+            # For pushes to main, find the last [skip ci] commit or validate up to 50 commits back
+            if [ "${{ github.event_name }}" = "push" ]; then
+              LAST_SKIP=$(git log --oneline -50 | grep '\[skip ci\]' | head -1)
+              if [ -n "$LAST_SKIP" ]; then
+                BASE_COMMIT="${LAST_SKIP%% *}~1"
+              else
+                BASE_COMMIT="HEAD~50..HEAD"
+              fi
+            else
+              BASE_COMMIT="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+            fi
+            echo "base=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
             echo "head=HEAD" >> "$GITHUB_OUTPUT"
           fi
 
