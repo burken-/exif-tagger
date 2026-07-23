@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "exif-tagger"
+version = "0.1.0"
+description = "AI-powered image tagging tool that writes tags as XPTags EXIF metadata"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.5",
+    "PyYAML>=6.0",
+    "Pillow>=10.0",
+    "piexif>=1.1.3",
+    "openai>=1.10",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "PIE", "SIM", "PERF", "PLW"]
+ignore = [
+    "BLE001",       # Blind except Exception (intentional in error handling)
+    "B017",         # pytest.raises(Exception) (valid for testing any exception)
+    "RUF012",       # Mutable class attributes (intentional shared constants)
+    "TRY004",       # ValueError vs TypeError (design choice)
+    "S112",         # try-except-continue (intentional error handling)
+    "S110",         # try-except-pass (intentional error handling)
+    "G201",         # logging.exception usage (style preference)
+    "PLW0602",      # global without assignment (APScheduler pattern)
+    "PLW0603",      # global statement discouraged (APScheduler pattern)
+    "PLW2901",      # with statement variable overwritten (intentional reassignment)
+    "PERF102",      # dict.items vs values (minor perf, readability tradeoff)
+    "PERF401",      # list.extend for transformed lists (readability choice)
+    "PERF403",      # dict comprehension (readability choice)
+    "SIM117",       # nested with statements (readability choice)
+    "SIM118",       # key in dict.keys() vs key in dict (minor style)
+    "F841",         # unused local variables (intentional placeholders/debugging)
+    "E741",         # ambiguous variable name `l` (common in list comprehensions)
+    "E501",         # line too long (existing codebase convention)
+    "E402",         # module level import not at top (intentional late imports)
+    "E702",         # multiple statements on one line (test mock setup convenience)
+]
