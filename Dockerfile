@@ -1,7 +1,7 @@
 # ============================================================================
-# exif-tagger – Multi-stage build
+# exif-tagger – Multi-stage build for web dashboard service
 # Stage 1: Build Python dependencies (fast, cached)
-# Stage 2: Install system tools (exiftool for XPTags support)
+# Stage 2: Install system tools + runtime image
 # ============================================================================
 
 FROM python:3.12-alpine AS builder
@@ -11,7 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
-# Final image – minimal Alpine with exiftool installed via CPAN
+# Final image – minimal Alpine with exiftool for XPTags support
 FROM alpine:3.19
 
 # Install perl (required for cpan) and basic tools, then exiftool
@@ -29,7 +29,14 @@ COPY --from=builder /install /usr/local
 
 # Copy application source
 COPY src/ ./src/
+COPY webui/ ./webui/
 COPY config.yaml.example ./config.yaml.example
 
-ENTRYPOINT ["python", "-m", "exif_tagger"]
-CMD []
+# Create directories for runtime data
+RUN mkdir -p /app/data /app/config
+
+# Expose dashboard port
+EXPOSE 8080
+
+# Run FastAPI server via uvicorn
+ENTRYPOINT ["uvicorn", "src.exif_tagger.server:app", "--host", "0.0.0.0", "--port", "8080"]
