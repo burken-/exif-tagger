@@ -14,13 +14,8 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 # Final image – minimal Alpine with exiftool for XPTags support
 FROM alpine:3.19
 
-# Install perl (required for cpan) and basic tools, then exiftool
-RUN apk add --no-cache \
-    perl \
-    perl-dev \
-    build-base \
-  && cpan -i Image::ExifTool \
-  && rm -rf ~/.cpan /root/.cpan
+# Install exiftool via apk (pre-built, avoids CPAN test failures)
+RUN apk add --no-cache perl exiftool
 
 WORKDIR /app
 
