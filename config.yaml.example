@@ -1,0 +1,50 @@
+# ============================================================================
+# exif-tagger configuration example
+# ============================================================================
+
+# Root directory to scan recursively for images.
+# Can be overridden by env var EXIFTAGGER_ROOT_DIRECTORY.
+root_directory: "/data/images"
+
+# Vision model configuration (OpenAI-compatible endpoint)
+model:
+  base_url: "https://api.openai.com/v1"      # OpenAI or compatible (e.g., local Ollama, vLLM)
+  model_name: "gpt-4o"                        # Model identifier
+  api_key: ""                                 # Or set env var OPENAI_API_KEY
+  max_tokens: 500                             # Max tokens per response
+  temperature: 0.1                            # Low for deterministic output
+
+# Tag definitions – each tag has a description and threshold (0-1)
+# Images scoring >= threshold will have the tag written to XPTags.
+tags:
+  landscape:
+    description: "A scenic natural landscape with mountains, forests, water, or open vistas"
+    threshold: 0.7
+
+  portrait:
+    description: "An image where a person's face is clearly visible and in focus"
+    threshold: 0.8
+
+  architecture:
+    description: "Buildings, bridges, towers, or other constructed structures"
+    threshold: 0.6
+
+  wildlife:
+    description: "Animals in natural habitat – birds, mammals, insects, fish"
+    threshold: 0.7
+
+  food:
+    description: "Food items, meals, or culinary presentations"
+    threshold: 0.8
+
+  abstract:
+    description: "Abstract art, patterns, textures without clear subject matter"
+    threshold: 0.5
+
+# Regex patterns for file/directory paths to exclude from processing.
+# Example: skip hidden directories and thumbnail folders.
+exclude_patterns:
+  - "^\\.DS_Store"
+  - "/\\."
+  - "thumbs?_?(db|cache)?/i?"
+  - "\\.temp$"
