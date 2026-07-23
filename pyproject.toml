@@ -51,6 +51,7 @@ ignore = [
     "PERF401",      # list.extend for transformed lists (readability choice)
     "PERF403",      # dict comprehension (readability choice)
     "SIM117",       # nested with statements (readability choice)
+    "SIM118",       # key in dict.keys() vs key in dict (minor style)
     "F841",         # unused local variables (intentional placeholders/debugging)
     "E741",         # ambiguous variable name `l` (common in list comprehensions)
     "E501",         # line too long (existing codebase convention)
