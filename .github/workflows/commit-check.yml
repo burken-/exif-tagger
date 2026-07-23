@@ -1,0 +1,42 @@
+name: Commit Convention Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches:
+      - main
+
+jobs:
+  conventional-commits:
+    name: Validate Conventional Commits
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Determine PR range or full history for validation
+        id: refs
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+            echo "head=HEAD" >> "$GITHUB_OUTPUT"
+          else
+            # For pushes to main, validate the last commit only (or full range if needed)
+            echo "base=$(git rev-parse HEAD~1)" >> "$GITHUB_OUTPUT"
+            echo "head=HEAD" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate commits against Conventional Commits format
+        run: |
+          python scripts/validate_commits.py \
+            "${{ steps.refs.outputs.base }}" \
+            "${{ steps.refs.outputs.head }}" \
+            --allow-merge-commits

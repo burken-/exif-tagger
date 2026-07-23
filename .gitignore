@@ -41,5 +41,8 @@ Thumbs.db
 htmlcov/
 .tox/
 
+# Husky hooks (track commit-msg, ignore other husy internals)
+.husky/*.sh
+
 # Exif-tagger runtime
 .exif-tagger-checkpoint.json

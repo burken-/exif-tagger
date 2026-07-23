@@ -1,0 +1,194 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_BUMP_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read current version from pyproject.toml
+        id: read_version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "current=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Determine bump type from commit messages
+        id: bump_type
+        run: |
+          COMMITS=$(git log --format=%s "${{ steps.read_version.outputs.current }}..HEAD" 2>/dev/null || git log --format=%s HEAD~50..)
+
+          if echo "$COMMITS" | grep -qE '^feat:'; then
+            BUMP="minor"
+          elif echo "$COMMITS" | grep -qE '^fix:'; then
+            BUMP="patch"
+          else
+            BUMP=""
+          fi
+
+          # Also check for feat/fix in any commit if the tag range produced nothing
+          if [ -z "$BUMP" ]; then
+            COMMITS=$(git log --format=%s HEAD~50..)
+            if echo "$COMMITS" | grep -qE 'feat:'; then
+              BUMP="minor"
+            elif echo "$COMMITS" | grep -qE 'fix:'; then
+              BUMP="patch"
+            fi
+          fi
+
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          if [ -n "$BUMP" ]; then
+            echo "Will bump: $BUMP (found relevant commit messages)"
+          else
+            echo "No version bump needed"
+          fi
+
+      - name: Bump and update pyproject.toml
+        id: new_version
+        run: |
+          CURRENT="${{ steps.read_version.outputs.current }}"
+          BUMP="${{ steps.bump_type.outputs.bump }}"
+
+          if [ -z "$BUMP" ]; then
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "$BUMP" in
+            minor)
+              NEW_VERSION="$MAJOR.$((MINOR + 1)).0"
+              ;;
+            patch)
+              NEW_VERSION="$MAJOR.$MINOR.$((PATCH + 1))"
+              ;;
+          esac
+
+          # Update pyproject.toml version using Python (avoids sed quoting issues)
+          python3 - "$NEW_VERSION" << 'PYEOF'
+            import re, sys
+            new_ver = sys.argv[1]
+            with open("pyproject.toml", "r") as f:
+                content = f.read()
+            content = re.sub(
+                r'(version\s*=\s*)"([^"]+)"',
+                lambda m: m.group(0).replace(m.group(2), new_ver, 1),
+                content, count=1
+            )
+            with open("pyproject.toml", "w") as f:
+                f.write(content)
+          PYEOF
+
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version updated to $NEW_VERSION"
+
+      - name: Commit and push version change
+        if: steps.new_version.outputs.skipped == 'false' && steps.new_version.outputs.version != ''
+        run: |
+          git config user.name "release-bot"
+          git config user.email "release-bot@github.com"
+
+          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+
+          # Check for uncommitted changes (the version bump)
+          if ! git diff --quiet; then
+            git add pyproject.toml
+            git commit -m "chore: bump version to $NEW_VERSION [skip ci]" || echo "No changes to commit"
+            git push origin main
+
+            # Create and push tag for the new version
+            TAG="v$NEW_VERSION"
+            if ! git rev-parse "$TAG" >/dev/null 2>&1; then
+              git tag -a "$TAG" -m "Release $TAG" || echo "Tag may already exist locally, proceeding with push attempt"
+              git push origin "$TAG" || true
+            fi
+
+            # If the tag wasn't created (already existed), still try to force-push it
+            TAG="v${{ steps.new_version.outputs.version }}"
+            if ! git rev-parse HEAD^{tag} 2>/dev/null | grep -q "Release $TAG"; then
+              git push origin "$TAG" --force || true
+            fi
+
+            echo "Pushed version bump and tag v${{ steps.new_version.outputs.version }} to main"
+          else
+            echo "No changes detected after version update, skipping commit/push"
+          fi
+
+  docker-release:
+    runs-on: ubuntu-latest
+    needs: [version-bump]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from pyproject.toml
+        id: get_version
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine image visibility and tags
+        id: meta_tags
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          
+          # Check if this is a stable release (no pre-release suffix like alpha, beta, rc)
+          if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            VISIBILITY="public"
+            echo "Stable release detected: $VERSION"
+          else
+            VISIBILITY="private"
+            echo "Pre-release build detected: $VERSION (setting visibility to private)"
+          fi
+
+          # Build tag list - always include the version tag and latest for stable releases
+          TAGS="ghcr.io/${{ github.repository }}:${TAG_NAME}"
+          
+          if [[ "$VISIBILITY" == "public" ]]; then
+            TAGS="${TAGS},ghcr.io/${{ github.repository }}:latest"
+          fi
+
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+          echo "visibility=$VISIBILITY" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta_tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.title=exif-tagger
+            org.opencontainers.image.description=AI-powered image tagging tool that writes tags as XPTags EXIF metadata
+            org.opencontainers.image.version=${{ steps.get_version.outputs.version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

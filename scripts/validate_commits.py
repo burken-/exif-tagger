@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Validate commit messages in a PR range against Conventional Commits format.
+
+Usage:
+    python validate_commits.py <base_ref> <head_ref> [--allow-merge-commits]
+
+Example:
+    python validate_commits.py main HEAD --allow-merge-commits
+"""
+
+import subprocess
+import sys
+
+
+ALLOWED_TYPES = [
+    "feat",
+    "fix",
+    "docs",
+    "style",
+    "refactor",
+    "perf",
+    "test",
+    "build",
+    "ci",
+    "chore",
+    "revert",
+]
+
+# Conventional Commits pattern: <type>: <description> (min 10 chars)
+import re
+
+COMMIT_PATTERN = re.compile(
+    r"^(?P<type>" + "|".join(ALLOWED_TYPES) + r"): (?P<desc>.{10,})$"
+)
+
+
+def get_commits(base_ref: str, head_ref: str):
+    """Get list of commit hashes between base and head refs."""
+    try:
+        result = subprocess.run(
+            ["git", "log", "--format=%H %s", f"{base_ref}..{head_ref}", "--no-merges"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+    except subprocess.CalledProcessError as e:
+        print(f"ERROR: Failed to get commits between {base_ref} and {head_ref}")
+        print(e.stderr)
+        sys.exit(1)
+
+
+def validate_commit(commit_line: str, allow_merge_commits: bool = False):
+    """Validate a single commit message.
+
+    Returns (is_valid, error_message).
+    Merge commits are skipped when allow_merge_commits is True.
+    """
+    # Format from git log --format="%H %s" is "<hash> <subject>"
+    parts = commit_line.split(" ", 1)
+    if len(parts) != 2:
+        return False, f"Invalid commit format (no subject found): {commit_line}"
+
+    _sha, message = parts
+
+    # Skip merge commits when allowed
+    if allow_merge_commits and "Merge " in message:
+        print(f"SKIP (merge commit): {message[:80]}")
+        return True, None
+
+    match = COMMIT_PATTERN.match(message)
+    if not match:
+        types_str = ", ".join(ALLOWED_TYPES)
+        error_msg = (
+            f"{_sha}: '{message}'\n"
+            f"  -> Must follow format: <type>: <description> (min 10 chars)\n"
+            f"  Allowed types: {types_str}"
+        )
+        return False, error_msg
+
+    print(f"OK   {_sha[:8]}: {message}")
+    return True, None
+
+
+def main():
+    args = sys.argv[1:]
+    if len(args) < 2:
+        print("Usage: python validate_commits.py <base_ref> <head_ref> [--allow-merge-commits]")
+        sys.exit(1)
+
+    base_ref = args[0]
+    head_ref = args[1]
+    allow_merge_commits = "--allow-merge-commits" in args
+
+    print(f"Validating commits from {base_ref}..{head_ref}")
+    print("=" * 65)
+
+    commit_lines = get_commits(base_ref, head_ref)
+
+    if not commit_lines:
+        print("No non-merge commits found to validate.")
+        sys.exit(0)
+
+    errors = []
+    for line in commit_lines:
+        is_valid, error_msg = validate_commit(line, allow_merge_commits)
+        if not is_valid and error_msg:
+            errors.append(error_msg)
+
+    print("=" * 65)
+
+    if errors:
+        print(f"\n❌ {len(errors)} commit(s) violated Conventional Commits format:\n")
+        for err in errors:
+            print(err + "\n")
+        sys.exit(1)
+
+    print(f"✅ All {len(commit_lines)} commits follow Conventional Commits.")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
