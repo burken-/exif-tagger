@@ -31,7 +31,7 @@ jobs:
           else
             # For pushes to main, find the last [skip ci] commit or validate up to 50 commits back
             if [ "${{ github.event_name }}" = "push" ]; then
-              LAST_SKIP=$(git log --oneline -50 | grep '\[skip ci\]' | head -1)
+              LAST_SKIP=$(git log --oneline -50 --no-merges | grep '\[skip ci\]' | head -1)
               if [ -n "$LAST_SKIP" ]; then
                 BASE_COMMIT="${LAST_SKIP%% *}~1"
               else
