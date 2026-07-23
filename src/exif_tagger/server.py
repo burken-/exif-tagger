@@ -416,23 +416,25 @@ def serve_js():
 
 
 # ---------------------------------------------------------------------------
-# Startup & Shutdown events
+# Startup & Shutdown lifespan (modern FastAPI pattern, replaces deprecated @app.on_event)
 # ---------------------------------------------------------------------------
 
-@app.on_event("startup")
-def on_startup():
-    """Initialize scheduler and engine on server start."""
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):  # type: ignore[no-untyped-def]
+    """Lifespan context manager for startup and shutdown events."""
     logger.info("EXIF Tagger API starting up...")
     _setup_scheduler()
     logger.info(f"Loaded {_schedules.__len__()} schedules")
-
-
-@app.on_event("shutdown")
-def on_shutdown():
-    """Clean shutdown."""
+    yield
     global _scheduler
     if _scheduler:
         _scheduler.shutdown(wait=False)
+
+
+app.router.lifespan_context = lifespan
 
 
 # ---------------------------------------------------------------------------
