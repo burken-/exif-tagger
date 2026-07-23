@@ -1,13 +1,13 @@
 #!/bin/sh
 # Husky commit-msg hook - validates Conventional Commits format
-# Pattern: <type>: <description> (min 10 chars)
+# Pattern: <type>(scope): <description> or <type>: <description> (min 10 chars)
 
 [ -z "$1" ] && exit 0
 
 commit_msg=$(cat "$1")
 
 allowed_types="feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert"
-pattern="^($allowed_types): .{10,}$"
+pattern="^($allowed_types)(\([a-z]+\))?: .{10,}$"
 
 if echo "$commit_msg" | grep -Eq "$pattern"; then
   exit 0
@@ -18,7 +18,7 @@ echo "==========================================================================
 echo "ERROR: Commit message does not follow Conventional Commits format."
 echo ""
 echo "Expected pattern:"
-echo "  <type>: <description>"
+echo "  <type>(scope): <description> or <type>: <description>"
 echo ""
 echo "Allowed types:"
 echo "  feat:     A new feature"
