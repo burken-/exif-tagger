@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EXIF Tagger Dashboard</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>EXIF Tagger</h1>
+            <span id="status-indicator" class="status-badge idle">Idle</span>
+        </header>
+
+        <!-- Tab Navigation -->
+        <nav class="tabs">
+            <button class="tab-btn active" data-tab="processing">Processing</button>
+            <button class="tab-btn" data-tab="config">Config</button>
+            <button class="tab-btn" data-tab="schedule">Schedule</button>
+        </nav>
+
+        <!-- Processing Tab -->
+        <section id="tab-processing" class="tab-content active">
+            <div class="card">
+                <h2>New Session</h2>
+                <div class="form-group">
+                    <label for="folder-path">Folder Path</label>
+                    <input type="text" id="folder-path" placeholder="/data/images/this-month">
+                </div>
+                <div class="form-group">
+                    <label for="max-images">Max Images (optional)</label>
+                    <input type="number" id="max-images" min="1" placeholder="Leave empty to process all">
+                </div>
+                <div class="button-row">
+                    <button id="btn-start" class="btn btn-primary">Start Processing</button>
+                    <button id="btn-stop" class="btn btn-danger" disabled>Stop</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>Progress</h2>
+                <div class="progress-bar-container">
+                    <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+                </div>
+                <p id="progress-text">0 / 0 images processed (0%)</p>
+            </div>
+
+            <div class="card">
+                <h2>Log Output</h2>
+                <pre id="log-output" class="log-panel"></pre>
+            </div>
+        </section>
+
+        <!-- Config Tab -->
+        <section id="tab-config" class="tab-content">
+            <div class="card">
+                <h2>Configuration</h2>
+                <div class="form-group">
+                    <label for="config-root">Root Directory</label>
+                    <input type="text" id="config-root" placeholder="/data/images">
+                </div>
+
+                <fieldset>
+                    <legend>Model Settings</legend>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="model-base-url">Base URL</label>
+                            <input type="text" id="model-base-url" placeholder="https://api.openai.com/v1">
+                        </div>
+                        <div class="form-group">
+                            <label for="model-name">Model Name</label>
+                            <input type="text" id="model-name" placeholder="gpt-4o">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="model-max-tokens">Max Tokens</label>
+                            <input type="number" id="model-max-tokens" min="100" max="4096">
+                        </div>
+                        <div class="form-group">
+                            <label for="model-temperature">Temperature (0.0–2.0)</label>
+                            <input type="range" id="model-temperature" min="0" max="2" step="0.1" value="0.1">
+                            <span id="temp-value">0.1</span>
+                        </div>
+                    </div>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Tags</legend>
+                    <div id="tags-container"></div>
+                    <button id="btn-add-tag" class="btn btn-secondary">+ Add Tag</button>
+                </fieldset>
+
+                <fieldset>
+                    <legend>Exclude Patterns</legend>
+                    <div id="exclude-container"></div>
+                    <button id="btn-add-exclude" class="btn btn-secondary">+ Add Pattern</button>
+                </fieldset>
+
+                <button id="btn-save-config" class="btn btn-primary">Save Configuration</button>
+            </div>
+        </section>
+
+        <!-- Schedule Tab -->
+        <section id="tab-schedule" class="tab-content">
+            <div class="card">
+                <h2>Scheduled Jobs</h2>
+                <table id="schedules-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Folder</th>
+                            <th>Frequency</th>
+                            <th>Next Run</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="schedules-tbody"></tbody>
+                </table>
+            </div>
+
+            <div class="card">
+                <h2>Add Schedule</h2>
+                <div class="form-group">
+                    <label for="schedule-name">Name</label>
+                    <input type="text" id="schedule-name" placeholder="Weekly gallery scan">
+                </div>
+                <div class="form-group">
+                    <label for="schedule-folder">Folder Path</label>
+                    <input type="text" id="schedule-folder" placeholder="/data/images/new-month">
+                </div>
+                <div class="form-group">
+                    <label for="schedule-type">Schedule Type</label>
+                    <select id="schedule-type">
+                        <option value="interval">Interval (hours)</option>
+                        <option value="cron">Cron Expression</option>
+                    </select>
+                </div>
+                <div class="form-group" id="interval-input-group">
+                    <label for="schedule-interval">Hours Between Runs</label>
+                    <input type="number" id="schedule-interval" min="0.1" step="0.5" value="6">
+                </div>
+                <div class="form-group" id="cron-input-group" style="display:none;">
+                    <label for="schedule-cron">Cron Expression</label>
+                    <input type="text" id="schedule-cron" placeholder="0 2 * * * (daily at 2am)">
+                </div>
+                <button id="btn-add-schedule" class="btn btn-primary">Add Schedule</button>
+            </div>
+
+            <div class="card">
+                <h2>Quick Presets</h2>
+                <div class="preset-buttons">
+                    <button data-type="interval" data-hours="1">Every 1 hour</button>
+                    <button data-type="interval" data-hours="6">Every 6 hours</button>
+                    <button data-type="cron" data-cron="0 2 * * *">Daily at 2am</button>
+                    <button data-type="cron" data-cron="0 9 * * 1-5">Weekdays at 9am</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
