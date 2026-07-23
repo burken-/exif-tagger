@@ -4,8 +4,10 @@ on:
   push:
     branches:
       - main
-    tags:
-      - 'v*'
+    paths-ignore:
+      - 'pyproject.toml'
+  tags:
+    - 'v*'
 
 jobs:
   version-bump:
@@ -70,7 +72,9 @@ jobs:
             exit 0
           fi
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          # Strip pre-release suffix for arithmetic (e.g., "0.1.0-beta.1" -> "0.1.0")
+          BASE_VERSION=$(echo "$CURRENT" | sed 's/-.*//')
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VERSION"
 
           case "$BUMP" in
             minor)
@@ -81,26 +85,40 @@ jobs:
               ;;
           esac
 
-          # Update pyproject.toml version using Python (avoids sed quoting issues)
+          # Update pyproject.toml version line-by-line (targets only `version =` lines)
           python3 - "$NEW_VERSION" << 'PYEOF'
-            import re, sys
-            new_ver = sys.argv[1]
-            with open("pyproject.toml", "r") as f:
-                content = f.read()
-            content = re.sub(
-                r'(version\s*=\s*)"([^"]+)"',
-                lambda m: m.group(0).replace(m.group(2), new_ver, 1),
-                content, count=1
-            )
-            with open("pyproject.toml", "w") as f:
-                f.write(content)
-          PYEOF
+import re
+with open("pyproject.toml", "r") as f:
+    lines = f.readlines()
+
+for i, line in enumerate(lines):
+    if re.match(r'^\s*version\s*=', line) and 'tomllib' not in str(line):
+        indent_match = re.match(r'(\s*)', line)
+        indent = indent_match.group(1) if indent_match else ''
+        lines[i] = f'{indent}version = "{new_ver}"\n'
+        break
+
+with open("pyproject.toml", "w") as f:
+    f.writelines(lines)
+PYEOF
 
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "Version updated to $NEW_VERSION"
 
+      - name: Check if tag already exists
+        id: check_tag
+        run: |
+          TAG="v${{ steps.new_version.outputs.version }}"
+          REMOTE_TAG=$(git ls-remote --tags origin "refs/tags/$TAG" 2>/dev/null || true)
+          if [ -n "$REMOTE_TAG" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Tag $TAG already exists remotely. Skipping push."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Commit and push version change
-        if: steps.new_version.outputs.skipped == 'false' && steps.new_version.outputs.version != ''
+        if: steps.new_version.outputs.skipped == 'false' && steps.new_version.outputs.version != '' && steps.check_tag.outputs.exists == 'false'
         run: |
           git config user.name "release-bot"
           git config user.email "release-bot@github.com"
@@ -152,7 +170,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          username: ${{ secrets.GHCR_USERNAME || github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Determine image visibility and tags
@@ -191,4 +209,17 @@ jobs:
             org.opencontainers.image.title=exif-tagger
             org.opencontainers.image.description=AI-powered image tagging tool that writes tags as XPTags EXIF metadata
             org.opencontainers.image.version=${{ steps.get_version.outputs.version }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Save Docker image as artifact
+        run: |
+          docker save ${{ steps.meta_tags.outputs.tags }} -o /tmp/exif-tagger.tar
+        if: always()
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ steps.get_version.outputs.version }}
+          path: /tmp/exif-tagger.tar
+          retention-days: 7
+        if: always()

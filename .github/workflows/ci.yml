@@ -20,6 +20,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
@@ -30,6 +38,7 @@ jobs:
         run: ruff check src/ tests/
 
   test:
+    needs: lint
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -42,13 +51,22 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt[dev] || pip install -r requirements.txt pytest pytest-cov
+          pip install -r requirements.txt
+          python -c "import pytest" 2>/dev/null || pip install pytest pytest-cov
 
       - name: Run tests with coverage
-        run: pytest --cov=src --cov-report=xml
+        run: pytest --cov=src --cov-report=xml:coverage.xml
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -58,6 +76,7 @@ jobs:
           retention-days: 7
 
   docker-build:
+    needs: test
     runs-on: ubuntu-latest
     if: github.event_name == 'push' || (github.event_name == 'pull_request')
     steps:
