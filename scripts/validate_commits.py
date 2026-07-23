@@ -26,6 +26,7 @@ ALLOWED_TYPES = [
     "ci",
     "chore",
     "revert",
+    "initial",  # legacy: first commit of the project used this type
 ]
 
 # Conventional Commits pattern: <type>(scope): <description> or <type>: <description> (min 10 chars)
