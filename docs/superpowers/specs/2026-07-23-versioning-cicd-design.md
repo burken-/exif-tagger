@@ -72,35 +72,45 @@ main (protected, always deployable)
 
 ---
 
-## 3. Docker Image Tagging — Hybrid Strategy
+## 3. Docker Image Tagging — Hybrid Strategy with Private Registry
 
-### Trigger Matrix
+### Registry Setup
 
-| Event | Docker tags produced |
-|-------|---------------------|
-| Push to `main` (not via PR merge) | `latest-beta`, `<sha-short>` |
-| PR merged to `main` | `v<version>`, `latest`, `<sha-short>` |
-| Git tag pushed (`v*`) | `v<tag>`, `<sha-short>` |
-| Feature branch push | `<branch-name>-<sha-short>` (no `latest` or `beta` tags) |
+All Docker images are pushed to a **private registry** by default (GitHub Container Registry or Docker Hub private repository). This keeps beta and development builds inaccessible to the public. Only stable releases are promoted to public visibility.
+
+### Visibility Rules
+
+| Build type | Registry visibility | Tags produced |
+|------------|---------------------|---------------|
+| Push to `main` (not via PR merge) | **Private** | `latest-beta`, `<sha-short>` |
+| PR merged to `main` | **Public** | `v<version>`, `latest`, `<sha-short>` |
+| Git tag pushed (`v*`) | **Public** | `v<tag>`, `<sha-short>` |
+| Feature branch push | **Private** | `<branch-name>-<sha-short>` |
 
 ### Tag Naming Convention
 
-- **Stable releases:** `v0.1.0`, `v0.2.0` — matches git tag and pyproject.toml version
-- **Beta builds:** `latest-beta` — always points to the latest push to main
-- **Latest stable:** `latest` — updated only on PR merges (not direct pushes)
+- **Stable releases:** `v0.1.0`, `v0.2.0` — matches git tag and pyproject.toml version (public)
+- **Beta builds:** `latest-beta` — always points to the latest push to main (private)
+- **Latest stable:** `latest` — updated only on PR merges or tag pushes (public)
 - **Commit reference:** `<sha-short>` (e.g., `a3f2b1c`) — always included for traceability
-- **Branch builds:** `<branch-slug>-<sha-short>` (e.g., `feat-add-export-a3f2b1c`)
+- **Branch builds:** `<branch-slug>-<sha-short>` (e.g., `feat-add-export-a3f2b1c`, private)
 
 ### Docker Build Flow
 
 ```
-Push to main ──→ CI passes ──→ Build image → Push as latest-beta + <sha>
+Push to main ──→ CI passes ──→ Build image → Push as latest-beta + <sha>  [PRIVATE]
 PR merge ─────→ CI passes ──→ Bump version in pyproject.toml
                               Create git tag v<version>
-                              Build image → Push as v<version>, latest, <sha>
-Tag push (v*) ────────────────→ Build image → Push as v<tag>, <sha>
-Feature branch ───────────────→ Build image → Push as <branch>-<sha>
+                              Build image → Push as v<version>, latest, <sha>  [PUBLIC]
+Tag push (v*) ────────────────→ Build image → Push as v<tag>, <sha>  [PUBLIC]
+Feature branch ───────────────→ Build image → Push as <branch>-<sha>  [PRIVATE]
 ```
+
+### Registry Access
+
+- **Private images:** Pull requires authentication with the registry token (stored in CI secrets)
+- **Public images:** No authentication required — anyone can pull `v0.x.y` and `latest` tags
+- To make a beta image temporarily accessible, manually retag and push to public registry or adjust repo visibility
 
 ---
 
@@ -194,9 +204,11 @@ refactor(scanner): extract batch scanning logic into separate module
 
 1. **Checkout code**
 2. **Set up Python and QEMU** (for multi-arch builds)
-3. **Docker metadata:** Extract version from `pyproject.toml`, generate tags
-4. **Build & push Docker image:** Multi-platform (linux/amd64, linux/arm64)
-5. **Tag routing:** Apply correct tags based on trigger type (see Section 3)
+3. **Login to registry:** Authenticate with GitHub token or Docker Hub credentials (stored in CI secrets)
+4. **Docker metadata:** Extract version from `pyproject.toml`, generate tags
+5. **Build & push Docker image:** Multi-platform (linux/amd64, linux/arm64), tagged as private by default
+6. **Visibility control:** If triggered by PR merge or tag push → set repo visibility to public for those tags; otherwise keep private
+7. **Tag routing:** Apply correct tags based on trigger type (see Section 3)
 
 ---
 
