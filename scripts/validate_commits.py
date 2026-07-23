@@ -28,10 +28,10 @@ ALLOWED_TYPES = [
     "revert",
 ]
 
-# Conventional Commits pattern: <type>: <description> (min 10 chars)
+# Conventional Commits pattern: <type>(scope): <description> or <type>: <description> (min 10 chars)
 
 COMMIT_PATTERN = re.compile(
-    r"^(?P<type>" + "|".join(ALLOWED_TYPES) + r"): (?P<desc>.{10,})$"
+    r"^(?P<type>" + "|".join(ALLOWED_TYPES) + r")(\([a-z]+\))?: (?P<desc>.{10,})$"
 )
 
 
@@ -74,7 +74,7 @@ def validate_commit(commit_line: str, allow_merge_commits: bool = False):
         types_str = ", ".join(ALLOWED_TYPES)
         error_msg = (
             f"{_sha}: '{message}'\n"
-            f"  -> Must follow format: <type>: <description> (min 10 chars)\n"
+            f"  -> Must follow format: <type>(scope): <description> or <type>: <description> (min 10 chars)\n"
             f"  Allowed types: {types_str}"
         )
         return False, error_msg
