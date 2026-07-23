@@ -6,8 +6,7 @@ import logging
 import re
 from pathlib import Path
 
-from exif_tagger.models.schema import IMAGE_EXTENSIONS
-
+from exif_tagger.models.schema import IMAGE_EXTENSIONS, ImageCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +92,7 @@ def scan_images(
 
 def filter_by_checkpoint(
     all_images: list[Path],
-    checkpoint: dict[str, "ImageCheckpoint"],  # type: ignore[name-defined]
+    checkpoint: dict[str, ImageCheckpoint]
 ) -> tuple[list[Path], int]:
     """Separate images into 'to_process' and count of already-done ones.
 
@@ -104,7 +103,6 @@ def filter_by_checkpoint(
     Returns:
         Tuple of (images_to_process, number_already_done).
     """
-    from exif_tagger.models.schema import ImageCheckpoint
 
     images_to_process: list[Path] = []
     already_done = 0

@@ -30,7 +30,7 @@ class TestScanImages:
         )
         paths_str = {str(p) for p in images}
         assert not any(".hidden" in str(p) for p in images), (
-            f".hidden.jpg was included but should be excluded by '^\\.' pattern"
+            ".hidden.jpg was included but should be excluded by '^\\.' pattern"
         )
 
     def test_excludes_by_pattern(self, tmp_path):
@@ -72,7 +72,6 @@ class TestExcludeCompilers:
 
     def test_invalid_pattern_skipped(self, caplog):
         """Invalid regex pattern should be skipped with a warning."""
-        import logging
 
         compilers = build_exclude_compilers(["[invalid"])
         # The invalid pattern is silently skipped (warning logged), not raised

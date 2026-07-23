@@ -310,11 +310,10 @@ class TestPipelineEngineIntegration:
         engine = self._make_engine(tmp_path)
         
         # Need to re-create for fresh session — but we can't use the generator again.
-        pass  # Covered by test_start_session_processes_all_images above
+        # Covered by test_start_session_processes_all_images above
 
     def test_get_summary_after_session_completion(self, tmp_path):
         """After start_session() completes and state.finish() is called, get_summary should return it."""
-        from exif_tagger.main import PipelineEngine
         
         engine = self._make_engine(tmp_path)
         
@@ -354,7 +353,6 @@ class TestRunFunction:
 
     def test_run_calls_start_session(self, tmp_path):
         """run() should create a PipelineEngine and call start_session()."""
-        from pathlib import Path as PPath
         from unittest.mock import patch
         
         images_dir = tmp_path / "images"
@@ -369,7 +367,6 @@ class TestRunFunction:
         class MockTagDef:
             description = "tag"; threshold = 0.5
         
-        from exif_tagger.models.schema import TagResult
 
         with patch("exif_tagger.config.load_config", return_value=MagicMock(
             root_directory=str(images_dir), tags={"dog": MockTagDef()}, exclude_patterns=None, ai_model="test"
@@ -384,7 +381,6 @@ class TestRunFunction:
                         mock_engine.start_session.return_value = mock_summary
                         
                         # Patch PipelineEngine constructor to use our mock
-                        from exif_tagger.main import run
 
                         original_pipeline_class = None  # We'll patch directly in the module
                         
@@ -459,7 +455,7 @@ class TestCLIEntryPoints:
         try:
             _log_tag_list(tags)
         except Exception as e:
-            pytest.fail(f"_log_tag_list raised: {e}")
+            assert False, f"_log_tag_list raised: {e}"
 
     def test_format_summary_text(self):
         """_format_summary_text should produce a string with RUN SUMMARY."""

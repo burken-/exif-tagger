@@ -5,10 +5,8 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ---------------------------------------------------------------------------
 # Image support – vilka filändelser vi accepterar

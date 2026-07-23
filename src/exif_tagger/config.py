@@ -10,13 +10,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from exif_tagger.models.schema import Config, ImageCheckpoint
-
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ def load_config(config_path: str | Path | None = None) -> Config:
     raw_config: dict[str, Any] = {}
 
     if config_file.exists():
-        with open(config_file, "r", encoding="utf-8") as fh:
+        with open(config_file, encoding="utf-8") as fh:
             loaded = yaml.safe_load(fh) or {}
             if not isinstance(loaded, dict):
                 raise ValueError(
@@ -294,9 +294,8 @@ def load_checkpoint(
         if not validated_path.exists():
             return {}
 
-        from datetime import datetime, timezone
 
-        with open(validated_path, "r", encoding="utf-8") as fh:
+        with open(validated_path, encoding="utf-8") as fh:
             data = json.load(fh)
 
         # Basic sanity check
@@ -341,7 +340,7 @@ def save_checkpoint(
         images: Dict mapping absolute path strings → ImageCheckpoint objects
     """
     import json
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     # Get validated checkpoint path (guaranteed within root_directory)
     cp_path = get_checkpoint_path(root_directory)
@@ -352,7 +351,7 @@ def save_checkpoint(
 
     checkpoint = CheckpointData(
         version=1,
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
         root_directory=str(Path(root_directory).resolve()),
         total_images=total_images,
         processed=processed_count,

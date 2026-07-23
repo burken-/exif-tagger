@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -203,7 +203,7 @@ class TestScheduleModel:
 
 class TestComputeNextRun:
     def test_interval_hours(self):
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime
 
         schedule = ScheduleModel(name="test", folder="/data", interval_hours=6)
         next_run = server_module._compute_next_run(schedule)
@@ -211,7 +211,7 @@ class TestComputeNextRun:
 
         # Parse and verify it's roughly 6 hours ahead
         run_time = datetime.fromisoformat(next_run)
-        now = datetime.now(timezone.utc).replace(microsecond=0, second=0)
+        now = datetime.now(UTC).replace(microsecond=0, second=0)
         diff = (run_time - now).total_seconds() / 3600
         assert 5.9 <= diff <= 7.0
 

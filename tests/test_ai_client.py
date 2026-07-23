@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import pytest
-from PIL import Image
 
 from exif_tagger.ai_client import (
     _build_prompt,

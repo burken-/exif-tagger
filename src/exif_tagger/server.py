@@ -11,19 +11,18 @@ import logging
 import os
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from exif_tagger.config import load_config, save_checkpoint as _save_checkpoint
+from exif_tagger.config import load_config
 from exif_tagger.main import PipelineEngine
-from exif_tagger.models.schema import ScheduleEntry, ScheduleModel, TagDefinition
+from exif_tagger.models.schema import ScheduleModel, TagDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +75,7 @@ def _load_schedules() -> dict[str, ScheduleModel]:
     """Load schedules from disk."""
     if SCHEDULES_FILE.exists():
         try:
-            with open(SCHEDULES_FILE, "r") as f:
+            with open(SCHEDULES_FILE) as f:
                 data = json.load(f)
             return {sid: ScheduleModel(**sdata) for sid, sdata in data.items()}
         except (json.JSONDecodeError, Exception):
@@ -93,7 +92,7 @@ def _save_schedules() -> None:
 
 def _compute_next_run(schedule: ScheduleModel) -> str | None:
     """Compute next run time based on schedule type."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if schedule.cron_expression:
         # Simple cron parsing for common patterns
         parts = schedule.cron_expression.strip().split()
@@ -163,7 +162,7 @@ def _run_schedule_job(schedule_id: str) -> None:
         max_images=schedule.max_images,
     )
 
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     schedule.last_run_at = now
     schedule.last_status = "success" if not summary.get("errors") else "failed"
     _save_schedules()
@@ -179,7 +178,7 @@ def _setup_scheduler() -> None:
     from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
 
-    _scheduler = BackgroundScheduler(timezone=timezone.utc)
+    _scheduler = BackgroundScheduler(timezone=UTC)
     _scheduler.start()
 
     for sid, schedule in _schedules.items():
@@ -194,12 +193,12 @@ def _setup_scheduler() -> None:
                 try:
                     trigger = CronTrigger(
                         minute=minute, hour=hour, day_of_week=dow,
-                        day=dom, month=month, timezone=timezone.utc
+                        day=dom, month=month, timezone=UTC
                     )
                 except Exception as e:
                     logger.warning("Invalid cron expression for schedule '%s': %s", sid, e)
         elif schedule.interval_hours:
-            trigger = IntervalTrigger(hours=schedule.interval_hours, timezone=timezone.utc)
+            trigger = IntervalTrigger(hours=schedule.interval_hours, timezone=UTC)
 
         if trigger:
             try:
@@ -293,7 +292,7 @@ def api_update_config(updates: dict[str, Any]):
     try:
         # Load current config as raw YAML
         if Path(CONFIG_PATH).exists():
-            with open(CONFIG_PATH, "r") as f:
+            with open(CONFIG_PATH) as f:
                 current = yaml.safe_load(f) or {}
         else:
             current = {}
