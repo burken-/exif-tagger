@@ -175,12 +175,12 @@ class TestApiSchedules:
                     "folder": "/data/images",
                     "interval_hours": 1,
                 })
-            sid = resp.json()["id"]
+                sid = resp.json()["id"]
 
-            # Then delete it
-            resp = client.delete(f"/api/schedule/{sid}")
-            assert resp.status_code == 200
-            assert resp.json()["status"] == "deleted"
+                # Then delete it
+                resp = client.delete(f"/api/schedule/{sid}")
+                assert resp.status_code == 200
+                assert resp.json()["status"] == "deleted"
 
     def test_delete_nonexistent_schedule(self, client):
         resp = client.delete("/api/schedule/nonexistent_id")
