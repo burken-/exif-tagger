@@ -27,8 +27,8 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             # Use SHAs directly since PR checkouts use detached HEAD and branch names may not resolve
-            echo "base=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
-            echo "head=HEAD" >> "$GITHUB_OUTPUT"
+            echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else
             # For pushes to main, find the last [skip ci] commit or validate up to 50 commits back
             if [ "${{ github.event_name }}" = "push" ]; then
@@ -39,7 +39,7 @@ jobs:
                 BASE_COMMIT="HEAD~50..HEAD"
               fi
             else
-              BASE_COMMIT="${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+              BASE_COMMIT="${{ github.event.pull_request.base.sha }}"
             fi
             echo "base=$BASE_COMMIT" >> "$GITHUB_OUTPUT"
             echo "head=HEAD" >> "$GITHUB_OUTPUT"
