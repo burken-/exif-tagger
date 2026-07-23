@@ -2,12 +2,8 @@
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-
-import pytest
-from PIL import Image
+from unittest.mock import MagicMock, patch
 
 from exif_tagger.exif_writer import (
     _parse_existing_tags,

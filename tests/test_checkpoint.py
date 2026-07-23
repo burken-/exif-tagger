@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
-
-import pytest
 
 from exif_tagger.config import (
     get_checkpoint_path,
+    get_resume_info,
     load_checkpoint,
     save_checkpoint,
-    get_resume_info,
 )
 from exif_tagger.models.schema import ImageCheckpoint
 

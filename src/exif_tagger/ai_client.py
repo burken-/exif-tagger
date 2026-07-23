@@ -34,10 +34,9 @@ from PIL import Image
 from exif_tagger.models.schema import (
     ModelConfig,
     TagDefinition,
-    TagResult,
     TaggingResponse,
+    TagResult,
 )
-
 
 logger = logging.getLogger(__name__)
 
@@ -141,9 +140,7 @@ def _image_to_base64(image_path: Path, max_dim: int = MAX_IMAGE_DIMENSION) -> st
     """Convert a local image file to base64-encoded JPEG (resized if needed)."""
     with Image.open(image_path) as img:
         # Convert RGBA/CMYK etc. to RGB for broad compatibility
-        if img.mode in ("RGBA", "LA", "P"):
-            img = img.convert("RGB")
-        elif img.mode != "RGB":
+        if img.mode in ("RGBA", "LA", "P") or img.mode != "RGB":
             img = img.convert("RGB")
 
         # Resize if needed (keep aspect ratio)

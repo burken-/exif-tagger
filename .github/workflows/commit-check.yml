@@ -26,7 +26,8 @@ jobs:
         id: refs
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            echo "base=${{ github.base_ref }}" >> "$GITHUB_OUTPUT"
+            # Use SHAs directly since PR checkouts use detached HEAD and branch names may not resolve
+            echo "base=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
             echo "head=HEAD" >> "$GITHUB_OUTPUT"
           else
             # For pushes to main, find the last [skip ci] commit or validate up to 50 commits back

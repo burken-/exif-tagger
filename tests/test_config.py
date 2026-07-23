@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import textwrap
-from pathlib import Path
-
 import pytest
 import yaml
 
@@ -55,7 +51,6 @@ class TestTagDefinition:
         assert "description" in td
 
     def test_with_threshold(self):
-        import json
 
         from exif_tagger.models.schema import TagDefinition
 
@@ -161,7 +156,7 @@ class TestConfigValidationEdgeCases:
         from exif_tagger.models.schema import Config as Cfg
 
         with pytest.raises(Exception):
-            Cfg(**{"model": {"base_url": "http://x.com", "model_name": "test"}})
+            Cfg(model={"base_url": "http://x.com", "model_name": "test"})
 
     def test_tags_from_list_format(self, tmp_path):
         """Tags can also come in list format (handled by validator)."""
