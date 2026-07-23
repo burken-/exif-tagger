@@ -155,24 +155,26 @@ class TestApiSchedules:
 
     def test_create_schedule(self, client):
         with patch.object(server_module, '_setup_scheduler'):
-            resp = client.post("/api/schedule", json={
-                "name": "Daily scan",
-                "folder": "/data/images",
-                "interval_hours": 6,
-                "enabled": True,
-            })
+            with patch.object(server_module, '_save_schedules'):
+                resp = client.post("/api/schedule", json={
+                    "name": "Daily scan",
+                    "folder": "/data/images",
+                    "interval_hours": 6,
+                    "enabled": True,
+                })
             assert resp.status_code == 200
             data = resp.json()
             assert "id" in data
 
     def test_delete_schedule(self, client):
         with patch.object(server_module, '_setup_scheduler'):
-            # First create a schedule
-            resp = client.post("/api/schedule", json={
-                "name": "Test",
-                "folder": "/data/images",
-                "interval_hours": 1,
-            })
+            with patch.object(server_module, '_save_schedules'):
+                # First create a schedule
+                resp = client.post("/api/schedule", json={
+                    "name": "Test",
+                    "folder": "/data/images",
+                    "interval_hours": 1,
+                })
             sid = resp.json()["id"]
 
             # Then delete it
