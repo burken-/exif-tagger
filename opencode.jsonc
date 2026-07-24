@@ -1,3 +1,13 @@
 {
-  "$schema": "https://opencode.ai/config.json"
+  "$schema": "https://opencode.ai/config.json",
+  "commands": {
+    "commit": {
+      "template": "!bash scripts/git-commit.sh!",
+      "description": "Generate conventional commit message from staged changes and commit"
+    },
+    "push-pr": {
+      "template": "!bash scripts/git-push-pr.sh!",
+      "description": "Push current branch to remote and create PR against main"
+    }
+  }
 }
