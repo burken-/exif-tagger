@@ -1,8 +1,5 @@
 name: Release
 
-permissions:
-  packages: write
-
 on:
   push:
     branches:
@@ -19,6 +16,10 @@ concurrency:
 jobs:
   version-bump:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -146,8 +147,11 @@ jobs:
 
   docker-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     needs: [version-bump]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'push' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -172,29 +176,55 @@ jobs:
         id: meta_tags
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          TAG_NAME="${GITHUB_REF#refs/tags/}"
           
-          # Check if this is a stable release (no pre-release suffix like alpha, beta, rc)
-          if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            VISIBILITY="public"
-            echo "Stable release detected: $VERSION"
+          # Check if this is a tagged release or branch build
+          if [[ "${GITHUB_REF}" =~ ^refs/tags/v ]]; then
+            TAG_NAME="${GITHUB_REF#refs/tags/}"
+            
+            # Check if this is a stable release (no pre-release suffix like alpha, beta, rc)
+            if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              VISIBILITY="public"
+              echo "Stable tag detected: $VERSION - will push with latest tag"
+              
+              # For stable releases: use version tag + latest (replace any existing)
+              TAGS="ghcr.io/${{ github.repository }}:${TAG_NAME},ghcr.io/${{ github.repository }}:latest,ghcr.io/${{ github.repository }}:$VERSION"
+            else
+              VISIBILITY="private"
+              echo "Beta/RC release detected: $VERSION - will push with version tag only"
+              
+              # For beta releases: use the full tag name (e.g., v1.0.0-beta.1) and version without 'v' prefix
+              TAGS="ghcr.io/${{ github.repository }}:${TAG_NAME},ghcr.io/${{ github.repository }}:$VERSION,beta,latest"
+            fi
           else
+            # Branch build from main - this is a beta/pre-release image
             VISIBILITY="private"
-            echo "Pre-release build detected: $VERSION (setting visibility to private)"
-          fi
-
-          # Build tag list - always include the version tag and latest for stable releases
-          TAGS="ghcr.io/${{ github.repository }}:${TAG_NAME}"
-          
-          if [[ "$VISIBILITY" == "public" ]]; then
-            TAGS="${TAGS},ghcr.io/${{ github.repository }}:latest"
+            
+            # Use commit SHA for unique identification + 'beta' tag
+            COMMIT_SHA="${{ github.sha }}"
+            SHORT_SHA=$(echo "$COMMIT_SHA" | cut -c1-7)
+            
+            echo "Main branch build detected: $VERSION (commit ${SHORT_SHA}) - will push with beta tags"
+            
+            # Beta image tagged as 'beta' and replaces latest for main branch builds
+            TAGS="ghcr.io/${{ github.repository }}:${COMMIT_SHA},ghcr.io/${{ github.repository }}:$VERSION,beta,latest"
           fi
 
           echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
           echo "visibility=$VISIBILITY" >> "$GITHUB_OUTPUT"
 
+      - name: Set image visibility (private for beta images)
+        run: |
+          if [[ "${{ steps.meta_tags.outputs.visibility }}" == "private" ]]; then
+            # Mark package as private via GHCR API or GitHub CLI
+            gh api /packages/container/exif-tagger/visibility \
+              -f visibility="private" \
+              --accept=application/vnd.github.v3+json || true
+            
+            echo "Image marked as private (beta release)"
+          fi
+
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -202,9 +232,28 @@ jobs:
           tags: ${{ steps.meta_tags.outputs.tags }}
           labels: |
             org.opencontainers.image.title=exif-tagger
-            org.opencontainers.image.description=AI-powered image tagging tool that writes tags as XPTags EXIF metadata
+            org.opencontainers.image.description=AI-powered image tagging tool that writes tags as XPTags EXIF metadata (beta) if pre-release version.
             org.opencontainers.image.version=${{ steps.get_version.outputs.version }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Set release notes for beta images
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            # Create/update GitHub Release for pre-release tag (beta/alpha/rc)
+            gh release create "v$VERSION" \
+              --title="Beta Release v${VERSION}" \
+              --notes="🚧 **Pre-release Build**
+
+Version: $VERSION
+Commit: ${{ github.sha }}
+Build Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+This is a beta/pre-release image. Use at your own risk." \
+              --prerelease || echo "Release creation skipped"
+          fi
+        if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
 
       - name: Save Docker image as artifact
         run: |
