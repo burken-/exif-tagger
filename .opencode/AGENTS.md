@@ -67,7 +67,7 @@ Before every commit:
 
 - [ ] Commit does one logical thing (atomic)
 - [ ] Message explains the *why*, follows conventional format
-- [ ] Tests pass (`npm test`)
+- [ ] Tests pass (`pytest`)
 - [ ] No secrets in the diff (API keys, passwords, tokens)
 - [ ] No formatting-only changes mixed with behavior changes
 - [ ] `git diff --staged` reviewed for unintended changes
@@ -88,7 +88,7 @@ When the user signals completion — using words like **"done"**, **"ready to co
 ### Commit workflow summary
 
 ```
-User says "done" → Finalize all commits with git-commit skill
+User says "done" → Finalize all commits with scripts/git-commit.sh
                   → Create PR with push-pr script
                   → Architect review dispatches automatically
                   → Fix any issues found
