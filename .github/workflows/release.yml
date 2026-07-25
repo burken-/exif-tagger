@@ -290,6 +290,7 @@ jobs:
             gh release create "v$VERSION" \
               --title="Beta Release v${VERSION}" \
               --notes="$NOTES"
+          fi
 
         if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
       - name: Save Docker image as artifact
