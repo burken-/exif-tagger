@@ -49,7 +49,26 @@ jobs:
       - name: Determine bump type from commit messages
         id: bump_type
         run: |
-          COMMITS=$(git log --format=%s "${{ steps.read_version.outputs.current }}..HEAD" 2>/dev/null || git log --format=%s HEAD~50..)
+          COMMITS=""
+
+          # Try commits since last version tag first (safe, dynamic range)
+          if [ -n "${{ steps.read_version.outputs.current }}" ]; then
+            LAST_TAG="v${{ steps.read_version.outputs.current }}"
+            COMMITS=$(git log --format=%s "${LAST_TAG}..HEAD" 2>/dev/null || true)
+          fi
+
+          # Fallback: use dynamic commit range instead of hardcoded HEAD~50
+          if [ -z "$COMMITS" ]; then
+            COMMIT_COUNT=$(git rev-list --count HEAD)
+            if [ "$COMMIT_COUNT" -gt 50 ]; then
+              ROOT_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
+              RANGE="${ROOT_COMMIT}..HEAD~49"
+            else
+              ROOT_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
+              RANGE="${ROOT_COMMIT}..HEAD"
+            fi
+            COMMITS=$(git log --format=%s "$RANGE" 2>/dev/null || true)
+          fi
 
           if echo "$COMMITS" | grep -qE '^feat:'; then
             BUMP="minor"
@@ -61,7 +80,15 @@ jobs:
 
           # Also check for feat/fix in any commit if the tag range produced nothing
           if [ -z "$BUMP" ]; then
-            COMMITS=$(git log --format=%s HEAD~50..)
+            COMMIT_COUNT=$(git rev-list --count HEAD)
+            if [ "$COMMIT_COUNT" -gt 50 ]; then
+              ROOT_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
+              RANGE="${ROOT_COMMIT}..HEAD~49"
+            else
+              ROOT_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
+              RANGE="${ROOT_COMMIT}..HEAD"
+            fi
+            COMMITS=$(git log --format=%s "$RANGE" 2>/dev/null || true)
             if echo "$COMMITS" | grep -qE '^\s*(feat|fix):'; then
               if echo "$COMMITS" | grep -qE '^\s*feat:'; then
                 BUMP="minor"
@@ -71,7 +98,6 @@ jobs:
             fi
           fi
 
-          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
           if [ -n "$BUMP" ]; then
             echo "Will bump: $BUMP (found relevant commit messages)"
           else
