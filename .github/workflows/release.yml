@@ -6,8 +6,8 @@ on:
       - main
     paths-ignore:
       - 'pyproject.toml'
-  tags:
-    - 'v*'
+    tags:
+        - 'v*'
   workflow_dispatch:
 
 concurrency:
