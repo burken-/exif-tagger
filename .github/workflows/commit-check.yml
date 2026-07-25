@@ -36,7 +36,7 @@ jobs:
               if [ -n "$LAST_SKIP" ]; then
                 BASE_COMMIT="${LAST_SKIP%% *}~1"
               else
-                BASE_COMMIT="HEAD~50..HEAD"
+                BASE_COMMIT="HEAD~50"
               fi
             else
               BASE_COMMIT="${{ github.event.pull_request.base.sha }}"
