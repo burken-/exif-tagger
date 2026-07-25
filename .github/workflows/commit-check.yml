@@ -43,6 +43,11 @@ jobs:
                   BASE_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
                 fi
               fi
+
+              # Resolve relative refs to absolute SHAs for reliable git log usage
+              if echo "$BASE_COMMIT" | grep -q '~'; then
+                BASE_COMMIT=$(git rev-parse "$BASE_COMMIT")
+              fi
             else
               BASE_COMMIT="${{ github.event.pull_request.base.sha }}"
             fi
