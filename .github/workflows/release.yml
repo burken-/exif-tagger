@@ -251,19 +251,21 @@ jobs:
           
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             # Create/update GitHub Release for pre-release tag (beta/alpha/rc)
+            NOTES=$(cat <<EOF
+          🚧 **Pre-release Build**
+
+          Version: $VERSION
+          Commit: ${{ github.sha }}
+          Build Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+
+          This is a beta/pre-release image. Use at your own risk.
+          EOF
+            )
             gh release create "v$VERSION" \
               --title="Beta Release v${VERSION}" \
-              --notes="🚧 **Pre-release Build**
+              --notes="$NOTES"
 
-Version: $VERSION
-Commit: ${{ github.sha }}
-Build Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-
-This is a beta/pre-release image. Use at your own risk." \
-              --prerelease || echo "Release creation skipped"
-          fi
         if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
-
       - name: Save Docker image as artifact
         run: |
           docker save ${{ steps.meta_tags.outputs.tags }} -o /tmp/exif-tagger.tar
