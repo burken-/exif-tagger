@@ -1,0 +1,35 @@
+---
+name: delegate-context7
+description: Delegate tasks requiring external documentation, library code, API references, or SDK searches to an isolated subagent. Prefer delegation over granting MCP access to the current agent to prevent context bloat.
+compatibility: opencode
+---
+
+## Delegation Policy
+Use this skill whenever you need to search or read fresh external documentation or API specs. 
+The parent agent MUST NOT request MCP access directly. All interaction must be delegated.
+
+## Execution Rules
+1. Delegate this task using OpenCode's `@mention` system (e.g., `@docs-worker` or `@general`).
+2. Explicitly instruct the subagent to enable EXACTLY ONE tool: `mcp/context7-mcp`.
+3. Pass the payload envelope below to the subagent.
+
+## Subagent Injection Payload
+Include this exact structure in your delegation message:
+
+Required Tool: mcp/context7-mcp
+Task Prompt: 
+"""
+ROLE: Specialized Documentation Worker.
+TASK: [Insert specific library/API to search and what to extract]
+
+RULES:
+1. You may use exactly ONE tool: mcp/context7-mcp.
+2. Do not explain your reasoning. Produce only the requested artifact.
+3. Maximum response size: 500 tokens, minimal code blocks, concise summary.
+
+OUTPUT FORMAT:
+Status: SUCCESS | NOT_FOUND | ERROR
+Summary: [Concise technical summary]
+References: [Filenames or doc URLs]
+Minimal Code: [Only if absolutely necessary]
+"""

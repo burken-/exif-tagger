@@ -21,7 +21,6 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Determine PR range or full history for validation
         id: refs
         run: |
@@ -30,13 +29,19 @@ jobs:
             echo "base=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
             echo "head=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
           else
-            # For pushes to main, find the last [skip ci] commit or validate up to 50 commits back
             if [ "${{ github.event_name }}" = "push" ]; then
-              LAST_SKIP=$(git log --oneline -50 --no-merges | grep '\[skip ci\]' | head -1)
+              # Find the last [skip ci] commit or validate up to 50 commits back dynamically
+              LAST_SKIP=$(git log --oneline --no-merges | grep '\[skip ci\]' | head -1 || true)
               if [ -n "$LAST_SKIP" ]; then
                 BASE_COMMIT="${LAST_SKIP%% *}~1"
               else
-                BASE_COMMIT="HEAD~50"
+                # Dynamic fallback: use root commit if fewer than 50 exist, otherwise HEAD~50
+                COMMIT_COUNT=$(git rev-list --count HEAD)
+                if [ "$COMMIT_COUNT" -gt 50 ]; then
+                  BASE_COMMIT="HEAD~50"
+                else
+                  BASE_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
+                fi
               fi
             else
               BASE_COMMIT="${{ github.event.pull_request.base.sha }}"

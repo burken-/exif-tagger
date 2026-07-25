@@ -1,0 +1,35 @@
+---
+name: delegate-github
+description: Delegate tasks requiring repository state, pull requests, issues, or GitHub actions to an isolated subagent. Prefer delegation over granting MCP access to the current agent to prevent context bloat.
+compatibility: opencode
+---
+
+## Delegation Policy
+Use this skill whenever you need to read PRs, issues, repository workflows, or perform git actions.
+The parent agent MUST NOT request MCP access directly. All interaction must be delegated.
+
+## Execution Rules
+1. Delegate this task using OpenCode's `@mention` system (e.g., `@git-worker` or `@general`).
+2. Explicitly instruct the subagent to enable EXACTLY ONE tool: `mcp/github-mcp`.
+3. Pass the payload envelope below to the subagent.
+
+## Subagent Injection Payload
+Include this exact structure in your delegation message:
+
+Required Tool: mcp/github-mcp
+Task Prompt: 
+"""
+ROLE: Specialized GitHub Worker.
+TASK: [Insert specific repo, PR number, or issue to evaluate]
+
+RULES:
+1. You may use exactly ONE tool: mcp/github-mcp.
+2. Do not explain your reasoning. Produce only the requested artifact.
+3. Maximum response size: 500 tokens, max 10 bullet points.
+
+OUTPUT FORMAT:
+Status: SUCCESS | NOT_FOUND | ERROR
+Summary: [Concise summary of the PR, issue, or repository state]
+References: [Links to PRs or commits]
+Minimal Code: [Only if reviewing specific lines]
+"""
