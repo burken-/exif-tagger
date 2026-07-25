@@ -3,17 +3,20 @@
 # Analyzes staged diff to auto-generate a conventional commit message,
 # then runs `git commit -m "<message>"` and prints the result.
 
-set -euo pipefail
+die() { echo "[git-commit] ERROR: $*" >&2; exit 1; }
 
 MIN_SUBJECT_LEN=10        # Matches .commitlintrc.json subject-min-length rule
 MAX_DESC_LEN=50           # Max description length in chars
 
+TMPFILE="$(mktemp)" || die "Cannot create temp file"
+trap 'rm -f "$TMPFILE"' EXIT
+
 ###############################################################################
 # 1. Check for staged changes
 ###############################################################################
-STAGED_DIFF="$(git diff --cached)" || true
+git diff --cached >"$TMPFILE" || true
 
-if [[ -z "$STAGED_DIFF" ]]; then
+if [[ ! -s "$TMPFILE" ]]; then
     echo "Error: No staged changes found." >&2
     echo "Stage some files first (e.g., git add ...) and try again." >&2
     exit 1
@@ -23,44 +26,44 @@ fi
 # 2. Determine change type from file paths & diff content
 ###############################################################################
 detect_type() {
-    local diff="$1"
+    local f="$1"
 
     # CI config changes → ci
-    if echo "$diff" | grep -qE '^\+\+\+ b/.github/workflows/'; then
+    if grep -qE '^\+\+\+ b/.github/workflows/' "$f"; then
         echo "ci"; return
     fi
 
     # Test additions / modifications → test
-    if echo "$diff" | grep -qE '^(--- a|\+\+\+ b)/tests/' && \
-       ! echo "$diff" | grep -qE '(src/exif_tagger/)'; then
+    if grep -qE '^(--- a|\+\+\+ b)/tests/' "$f" && \
+       ! grep -qE '(src/exif_tagger/)' "$f"; then
         echo "test"; return
     fi
 
     # Documentation files or docs/ directory → docs
-    if echo "$diff" | grep -qE '^\+\+\+ b/(docs|README\.md)'; then
+    if grep -qE '^\+\+\+ b/(docs|README\.md)' "$f"; then
         echo "docs"; return
     fi
 
     # Performance-related changes (look for perf keywords in src/)
-    if echo "$diff" | grep -qiE '(perf|performance)' && \
-       echo "$diff"  | grep -qE '^\+\+\+ b/src/exif_tagger/'; then
+    if grep -qiE '(perf|performance)' "$f" && \
+       grep -qE '^\+\+\+ b/src/exif_tagger/' "$f"; then
         echo "perf"; return
     fi
 
     # Refactor: only whitespace / structural changes in src/, no behavior change
     local additions deletions
-    additions="$(echo "$diff" | grep -c '^+' || true)"
-    deletions="$(echo "$diff" | grep -c '^-' || true)"
-    if echo "$diff" | grep -qE '^\+\+\+ b/src/exif_tagger/'; then
+    additions="$(grep -c '^+' "$f" || true)"
+    deletions="$(grep -c '^-' "$f" || true)"
+    if grep -qE '^\+\+\+ b/src/exif_tagger/' "$f"; then
         # Check for pure whitespace-only changes (refactor)
-        local non_whitespace_adds non_whitespace_dels
-        non_whitespace_adds="$(echo "$diff" | grep '^+' | grep -vc '^+[[:space:]]*$' || true)"
+        local non_whitespace_adds
+        non_whitespace_adds="$(grep '^+' "$f" | grep -vc '^+[[:space:]]*$' || true)"
         if [[ $non_whitespace_adds -eq 0 && $additions -gt 1 ]]; then
             echo "refactor"; return
         fi
 
         # Check for bug-fix keywords in source changes → fix
-        if echo "$diff" | grep -qiE '(fix|bug|error handling|exception)'; then
+        if grep -qiE '(fix|bug|error handling|exception)' "$f"; then
             echo "fix"; return
         fi
 
@@ -69,21 +72,21 @@ detect_type() {
     fi
 
     # Config / build / tooling files (pyproject.toml, config.yaml, etc.) → chore
-    if echo "$diff" | grep -qE '^\+\+\+ b/(config\.yaml|config\.yaml\.example|Dockerfile|docker-compose.yml|requirements.txt|pyproject.toml)'; then
+    if grep -qE '^\+\+\+ b/(config\.yaml|config\.yaml\.example|Dockerfile|docker-compose.yml|requirements.txt|pyproject.toml)' "$f"; then
         echo "chore"; return
     fi
 
     # webui changes → chore (tooling / build surface for now)
-    if echo "$diff" | grep -qE '^\+\+\+ b/webui/'; then
+    if grep -qE '^\+\+\+ b/webui/' "$f"; then
         echo "feat"; return
     fi
 
     # Fallback: look at diff content keywords
-    if echo "$diff" | grep -qiE '(fix|bug|error handling|exception)'; then
+    if grep -qiE '(fix|bug|error handling|exception)' "$f"; then
         echo "fix"; return
     fi
-    if echo "$diff" | grep -qiE '^\+\s*(import|def |class )' && \
-       ! echo "$diff" | grep -qE '(fix|bug|test)'; then
+    if grep -qiE '^\+\s*(import|def |class )' "$f" && \
+       ! grep -qE '(fix|bug|test)' "$f"; then
         echo "feat"; return
     fi
 
@@ -91,72 +94,72 @@ detect_type() {
     echo "chore"; return
 }
 
-CHANGE_TYPE="$(detect_type "$STAGED_DIFF")"
+CHANGE_TYPE="$(detect_type "$TMPFILE")"
 
 ###############################################################################
 # 3. Determine scope from changed file paths
 ###############################################################################
 detect_scope() {
-    local diff="$1"
+    local f="$1"
 
-    if echo "$diff" | grep -qE '^\+\+\+ b/src/exif_tagger/ai_client'; then
+    if grep -qE '^\+\+\+ b/src/exif_tagger/ai_client' "$f"; then
         echo "ai-client"; return
     fi
-    if echo "$diff" | grep -qE '^\+\+\+ b/src/exif_tagger/server'; then
+    if grep -qE '^\+\+\+ b/src/exif_tagger/server' "$f"; then
         echo "server"; return
     fi
-    if echo "$diff" | grep -qE '^\+\+\+ b/src/exif_tagger/image_scanner'; then
+    if grep -qE '^\+\+\+ b/src/exif_tagger/image_scanner' "$f"; then
         echo "image-scanner"; return
     fi
-    if echo "$diff" | grep -qE '^\+\+\+ b/src/exif_tagger/exif_writer'; then
+    if grep -qE '^\+\+\+ b/src/exif_tagger/exif_writer' "$f"; then
         echo "exif-writer"; return
     fi
-    if echo "$diff" | grep -qE '^\+\+\+ b/src/exif_tagger/(config|main)'; then
+    if grep -qE '^\+\+\+ b/src/exif_tagger/(config|main)' "$f"; then
         echo "core"; return
     fi
 
     # Any src/exif_tagger/ change → exif-tagger (generic scope for the package)
-    if echo "$diff" | grep -qE '^\+\+\+ b/src/exif_tagger/'; then
+    if grep -qE '^\+\+\+ b/src/exif_tagger/' "$f"; then
         echo "exif-tag"; return
     fi
 
-    if echo "$diff" | grep -qE '^\+\+\+ b/tests/'; then
+    if grep -qE '^\+\+\+ b/tests/' "$f"; then
         echo "tests"; return
     fi
 
-    if echo "$diff" | grep -qE '^\+\+\+ b/webui/(js|css)'; then
+    if grep -qE '^\+\+\+ b/webui/(js|css)' "$f"; then
         echo "webui"; return
     fi
 
-    if echo "$diff" | grep -qE '^\+\+\+ b/.github/workflows/'; then
+    if grep -qE '^\+\+\+ b/.github/workflows/' "$f"; then
         echo "ci"; return
     fi
 
     # Check for config/build files at root level → chore scope
-    if echo "$diff" | grep -qE '^\+\+\+ b/(config\.yaml|pyproject.toml)'; then
+    if grep -qE '^\+\+\+ b/(config\.yaml|pyproject.toml)' "$f"; then
         echo "config"; return
     fi
 
     echo ""  # No clear scope — omit it in the message
 }
 
-SCOPE="$(detect_scope "$STAGED_DIFF")"
+SCOPE="$(detect_scope "$TMPFILE")"
 
 ###############################################################################
 # 4. Generate description from diff content
 ###############################################################################
 generate_description() {
-    local diff="$1"
+    local f="$1"
     local desc=""
 
     # Grab added lines (ignoring pure whitespace) and pick meaningful ones
     local first_adds
-    first_adds="$(echo "$diff" | grep '^+' | grep -v '^\+\+$' | head -20)" || true
+    first_adds="$(grep '^+' "$f" | grep -v '^\+\+$' | head -20)" || true
 
     if [[ -z "$first_adds" ]]; then
         # All deletions or renames — fall back to deleted lines
         local first_dels
-        first_dels="$(echo "$diff" | grep '^-' | grep -v '^\-\+$' | head -20)" || true
+        first_dels="$(grep '^-' "$f" | grep -v '^\-\+$' | head -20)" || true
 
         if [[ -z "$first_dels" ]]; then
             desc="Update staged changes";
@@ -289,7 +292,7 @@ else
     COMMIT_MSG="${CHANGE_TYPE}: ${DESCRIPTION}"
 fi
 
-echo "Commit: $(git commit -m "$COMMIT_MSG" --no-verify 2>&1 | tail -1)" || true
+echo "Commit: $(git commit -m "$COMMIT_MSG" 2>&1 | tail -1)" || true
 # git-commit returns the hash via rev-parse on success; capture it separately.
 HASH="$(git log -1 --format='%H' 2>/dev/null || echo 'unknown')"
 
