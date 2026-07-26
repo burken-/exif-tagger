@@ -284,7 +284,11 @@ jobs:
       - name: Save Docker image as artifact
         run: |
           IFS=',' read -r -a IMAGE_TAGS <<< "${{ steps.meta_tags.outputs.tags }}"
-          docker save "${IMAGE_TAGS[@]}" -o /tmp/exif-tagger.tar
+          PRIMARY_TAG="${IMAGE_TAGS[0]}"
+          
+          # Ensure image exists locally before saving (Buildx push mode doesn't keep images locally)
+          docker pull "$PRIMARY_TAG" || { echo "::error::Failed to pull $PRIMARY_TAG"; exit 1; }
+          docker save "$PRIMARY_TAG" -o /tmp/exif-tagger.tar
         if: always()
 
       - name: Upload Docker image artifact
