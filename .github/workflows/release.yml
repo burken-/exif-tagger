@@ -228,7 +228,7 @@ jobs:
             fi
           else
             VISIBILITY="private"
-            SHORT_SHA="${GITHUB_SHA::12}"
+            SHORT_SHA="sha-${GITHUB_SHA::12}"
             echo "tags=${IMAGE}:${SHORT_SHA},${IMAGE}:${VERSION},${IMAGE}:beta,${IMAGE}:latest" >> "$GITHUB_OUTPUT"
           fi
 
