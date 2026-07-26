@@ -211,23 +211,23 @@ jobs:
         id: meta_tags
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          
-          # Check if this is a tagged release or branch build
+
+
           if [[ "${GITHUB_REF}" =~ ^refs/tags/v ]]; then
             TAG_NAME="${GITHUB_REF#refs/tags/}"
-            
-            # Check if this is a stable release (no pre-release suffix like alpha, beta, rc)
+
+
             if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               VISIBILITY="public"
-              echo "Stable tag detected: $VERSION - will push with latest tag"
-              
-              # For stable releases: use version tag + latest (replace any existing)
-              TAGS="ghcr.io/${{ github.repository }}:${TAG_NAME},ghcr.io/${{ github.repository }}:latest,ghcr.io/${{ github.repository }}:$VERSION"
+              {
+                echo "tags<<EOF"
+                echo "ghcr.io/${{ github.repository }}:${TAG_NAME}"
+                echo "ghcr.io/${{ github.repository }}:latest"
+                echo "ghcr.io/${{ github.repository }}:$VERSION"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
             else
               VISIBILITY="private"
-              echo "Beta/RC release detected: $VERSION - will push with version tag only"
-              
-              # For beta releases: use the full tag name (e.g., v1.0.0-beta.1) and version without 'v' prefix
               {
                 echo "tags<<EOF"
                 echo "ghcr.io/${{ github.repository }}:${TAG_NAME}"
@@ -238,16 +238,8 @@ jobs:
               } >> "$GITHUB_OUTPUT"
             fi
           else
-            # Branch build from main - this is a beta/pre-release image
             VISIBILITY="private"
-            
-            # Use commit SHA for unique identification + 'beta' tag
             COMMIT_SHA="${{ github.sha }}"
-            SHORT_SHA=$(echo "$COMMIT_SHA" | cut -c1-7)
-            
-            echo "Main branch build detected: $VERSION (commit ${SHORT_SHA}) - will push with beta tags"
-            
-            # Beta image tagged as 'beta' and replaces latest for main branch builds
             {
               echo "tags<<EOF"
               echo "ghcr.io/${{ github.repository }}:${COMMIT_SHA}"
@@ -257,6 +249,7 @@ jobs:
               echo "EOF"
             } >> "$GITHUB_OUTPUT"
           fi
+
 
           echo "visibility=$VISIBILITY" >> "$GITHUB_OUTPUT"
 
@@ -308,7 +301,8 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
       - name: Save Docker image as artifact
         run: |
-          docker save ${{ steps.meta_tags.outputs.tags }} -o /tmp/exif-tagger.tar
+          mapfile -t IMAGE_TAGS <<< "${{ steps.meta_tags.outputs.tags }}"
+          docker save "${IMAGE_TAGS[@]}" -o /tmp/exif-tagger.tar
         if: always()
 
       - name: Upload Docker image artifact
