@@ -15,15 +15,15 @@ jobs:
     permissions:
       id-token: write
     steps:
-       - name: Checkout repository
-         uses: actions/checkout@v6
-         with:
-           fetch-depth: 1
-           persist-credentials: false
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: false
 
-       - name: Run OpenCode
+      - name: Run OpenCode
         uses: anomalyco/opencode/github@latest
         with:
           model: lmstudio/qwen3.6-35b-a3b-mtp
           # share: true
-          github_token: {{ env.GITHUB_TOKEN }}
+          github_token: ${{ env.GITHUB_TOKEN }}

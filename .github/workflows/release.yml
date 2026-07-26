@@ -228,7 +228,14 @@ jobs:
               echo "Beta/RC release detected: $VERSION - will push with version tag only"
               
               # For beta releases: use the full tag name (e.g., v1.0.0-beta.1) and version without 'v' prefix
-              TAGS="ghcr.io/${{ github.repository }}:${TAG_NAME},ghcr.io/${{ github.repository }}:$VERSION,beta,latest"
+              {
+                echo "tags<<EOF"
+                echo "ghcr.io/${{ github.repository }}:${TAG_NAME}"
+                echo "ghcr.io/${{ github.repository }}:$VERSION"
+                echo "ghcr.io/${{ github.repository }}:beta"
+                echo "ghcr.io/${{ github.repository }}:latest"
+                echo "EOF"
+              } >> "$GITHUB_OUTPUT"
             fi
           else
             # Branch build from main - this is a beta/pre-release image
@@ -241,10 +248,16 @@ jobs:
             echo "Main branch build detected: $VERSION (commit ${SHORT_SHA}) - will push with beta tags"
             
             # Beta image tagged as 'beta' and replaces latest for main branch builds
-            TAGS="ghcr.io/${{ github.repository }}:${COMMIT_SHA},ghcr.io/${{ github.repository }}:$VERSION,beta,latest"
+            {
+              echo "tags<<EOF"
+              echo "ghcr.io/${{ github.repository }}:${COMMIT_SHA}"
+              echo "ghcr.io/${{ github.repository }}:$VERSION"
+              echo "ghcr.io/${{ github.repository }}:beta"
+              echo "ghcr.io/${{ github.repository }}:latest"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
           fi
 
-          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
           echo "visibility=$VISIBILITY" >> "$GITHUB_OUTPUT"
 
       - name: Set image visibility (private for beta images)
