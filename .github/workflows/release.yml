@@ -252,8 +252,8 @@ jobs:
           if [[ "${{ steps.meta_tags.outputs.visibility }}" == "private" ]]; then
             # Mark package as private via GHCR API or GitHub CLI
             gh api /packages/container/exif-tagger/visibility \
-              -f visibility="private" \
-              --accept=application/vnd.github.v3+json || true
+              -H "Accept: application/vnd.github.v3+json" \
+              -f visibility="private" || true
             
             echo "Image marked as private (beta release)"
           fi

@@ -35,18 +35,27 @@ jobs:
               if [ -n "$LAST_SKIP" ]; then
                 BASE_COMMIT="${LAST_SKIP%% *}~1"
               else
-                # Dynamic fallback: use root commit if fewer than 50 exist, otherwise HEAD~50
-                COMMIT_COUNT=$(git rev-list --count HEAD)
+                # Dynamic fallback: use root commit if fewer than 50 exist, otherwise the 50th commit from HEAD
+                COMMIT_COUNT=$(git rev-list --count HEAD || echo "0")
                 if [ "$COMMIT_COUNT" -gt 50 ]; then
-                  BASE_COMMIT="HEAD~50"
+                  BASE_COMMIT=$(git rev-list HEAD | sed -n '51p')
+                  if [ -z "$BASE_COMMIT" ]; then
+                    BASE_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
+                  fi
                 else
                   BASE_COMMIT="$(git rev-list --max-parents=0 HEAD | tail -n1)"
                 fi
               fi
 
-              # Resolve relative refs to absolute SHAs for reliable git log usage
+              # Resolve any remaining relative refs to absolute SHAs for reliable git log usage
               if echo "$BASE_COMMIT" | grep -q '~'; then
-                BASE_COMMIT=$(git rev-parse "$BASE_COMMIT")
+                RESOLVED=$(git rev-parse "${BASE_COMMIT}" 2>/dev/null || true)
+                if [ -n "$RESOLVED" ]; then
+                  BASE_COMMIT="$RESOLVED"
+                else
+                  # Shallow clone fallback: strip the ~N suffix and use the bare SHA
+                  BASE_COMMIT="${BASE_COMMIT%%~*}"
+                fi
               fi
             else
               BASE_COMMIT="${{ github.event.pull_request.base.sha }}"
