@@ -1,19 +1,4 @@
-"""Main script for exif-tagger – CLI entry point and pipeline engine.
-
-PERFORMANCE NOTES:
-- Batch checkpoint writes every CHECKPOINT_BATCH_SIZE images (default 100) to reduce I/O overhead
-- Sequential AI processing by default (most APIs queue requests server-side anyway)
-- Stream processing: process each image immediately instead of accumulating all results
-
-SECURITY NOTES:
-- Uses SecretRedactor logging filter from ai_client module to prevent API key exposure
-- All file paths validated through config.py's validate_path_within_base() function
-
-REALISTIC EXPECTATIONS:
-Processing time is dominated by AI model inference (~2 seconds per image). For 10k images,
-expect ~5.5 hours regardless of concurrency settings. The main bottleneck is the vision API,
-not our client code. Focus on reliability (checkpoint resumption) rather than speed.
-"""
+"""Main script for exif-tagger – CLI entry point and pipeline engine."""
 
 from __future__ import annotations
 
@@ -23,12 +8,8 @@ import sys
 import threading
 import time
 
-# ============================================================================
-# PERFORMANCE: Module Constants (avoid magic numbers)
-# ============================================================================
-
-CHECKPOINT_BATCH_SIZE = 100  # Write checkpoint every N images (balance safety vs I/O)
-ERRORS_TO_DISPLAY_MAX = 10   # Maximum errors shown in summary output
+CHECKPOINT_BATCH_SIZE = 100
+ERRORS_TO_DISPLAY_MAX = 10
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -189,7 +170,6 @@ class ProcessingState:
 
 
 class PipelineEngine:
-    """Reusable pipeline engine that can be called from CLI or API."""
 
     def __init__(self, config_path: str, verbose: bool = False):
         self.config_path = config_path
@@ -198,7 +178,6 @@ class PipelineEngine:
         self._config = None
 
     def _load_config(self):
-        """Load and validate configuration."""
         from exif_tagger.config import load_config
         from exif_tagger.models.schema import Config
 
@@ -213,7 +192,6 @@ class PipelineEngine:
         max_images: int | None = None,
         force_resume: bool = False,
     ) -> dict:
-        """Execute the full tagging pipeline. Returns summary dict on completion."""
         from exif_tagger.ai_client import setup_secure_logging, tag_image_with_ai
         from exif_tagger.config import get_resume_info, save_checkpoint
         from exif_tagger.exif_writer import tag_image_exif
@@ -227,7 +205,6 @@ class PipelineEngine:
         try:
             config = self._load_config()
 
-            # Allow overriding root_directory from API call
             if root_directory:
                 config.root_directory = root_directory
 
@@ -255,7 +232,6 @@ class PipelineEngine:
                     "errors": [],
                 }
 
-            # Checkpoint / resume logic
             checkpoint: dict[str, ImageCheckpoint] = {}
             skipped_by_checkpoint = 0
             already_tagged = 0
@@ -275,7 +251,6 @@ class PipelineEngine:
             images_to_process, done_from_cp = filter_by_checkpoint(all_images, checkpoint)
             skipped_by_checkpoint += done_from_cp
 
-            # Apply max_images limit
             if max_images is not None and len(images_to_process) > max_images:
                 images_to_process = images_to_process[:max_images]
 
@@ -285,7 +260,6 @@ class PipelineEngine:
             )
 
             if not images_to_process:
-                logger.info("All images already processed – nothing to do.")
                 return {
                     "root_directory": config.root_directory,
                     "total_images_found": total_found,
@@ -297,7 +271,6 @@ class PipelineEngine:
                     "errors": [],
                 }
 
-            # Initialize state tracking
             self.state.start(len(images_to_process))
 
             successfully_tagged = 0
@@ -348,7 +321,6 @@ class PipelineEngine:
 
                 self.state.update_progress(img_path.name)
 
-                # Batch checkpoint writes
                 checkpoint_batch_counter += 1
                 if checkpoint_batch_counter >= CHECKPOINT_BATCH_SIZE:
                     save_checkpoint(config.root_directory, total_found, checkpoint_images)
@@ -356,7 +328,6 @@ class PipelineEngine:
                     if self.verbose:
                         logger.debug("Checkpoint saved (batch of %d)", CHECKPOINT_BATCH_SIZE)
 
-            # Final checkpoint write
             save_checkpoint(config.root_directory, total_found, checkpoint_images)
 
             summary = {
