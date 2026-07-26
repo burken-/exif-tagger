@@ -26,13 +26,9 @@ from exif_tagger.models.schema import ScheduleModel, TagDefinition
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# App state (singleton pattern for the running engine and schedules)
-# ---------------------------------------------------------------------------
 
 app = FastAPI(title="EXIF Tagger", version="0.1.0")
 
-# Global state
 _engine: PipelineEngine | None = None
 _engine_lock = threading.Lock()
 _schedules: dict[str, ScheduleModel] = {}
@@ -40,10 +36,6 @@ _scheduler: BackgroundScheduler | None = None
 CONFIG_PATH = os.environ.get("EXIFTAGGER_CONFIG_FILE", "/app/config.yaml")
 SCHEDULES_FILE = Path("/app/schedules.json")
 
-
-# ---------------------------------------------------------------------------
-# Pydantic request/response models
-# ---------------------------------------------------------------------------
 
 class StartRequest(BaseModel):
     rootDirectory: str | None = None
@@ -58,10 +50,6 @@ class ScheduleCreateRequest(BaseModel):
     enabled: bool = True
     max_images: int | None = None
 
-
-# ---------------------------------------------------------------------------
-# Helper functions
-# ---------------------------------------------------------------------------
 
 def _get_engine() -> PipelineEngine:
     """Get or create the pipeline engine instance."""
@@ -94,7 +82,6 @@ def _compute_next_run(schedule: ScheduleModel) -> str | None:
     """Compute next run time based on schedule type."""
     now = datetime.now(UTC)
     if schedule.cron_expression:
-        # Simple cron parsing for common patterns
         parts = schedule.cron_expression.strip().split()
         if len(parts) == 5:
             minute, hour, dom, month, dow = parts
@@ -131,7 +118,6 @@ def _parse_cron_to_iso(
     months = _parse_field(month, 1, 12)
     dows = _parse_field(dow, 0, 6)
 
-    # Find next matching datetime (scan up to 7 days ahead)
     candidate = now.replace(microsecond=0, second=0, minute=now.minute + 1) if now.second == 0 else now.replace(microsecond=0, second=0)
 
     for _ in range(7 * 24 * 60):  # Check up to 7 days of minutes
@@ -155,7 +141,6 @@ def _run_schedule_job(schedule_id: str) -> None:
 
     logger.info("Running scheduled job: %s (folder=%s)", schedule.name, schedule.folder)
 
-    # Create a fresh engine for this job
     job_engine = PipelineEngine(config_path=CONFIG_PATH, verbose=False)
     summary = job_engine.start_session(
         root_directory=schedule.folder,
@@ -213,13 +198,8 @@ def _setup_scheduler() -> None:
                 logger.warning("Failed to add job for schedule '%s': %s", sid, e)
 
 
-# ---------------------------------------------------------------------------
-# API Routes — Status & Control
-# ---------------------------------------------------------------------------
-
 @app.get("/api/status")
 def api_status():
-    """Get current processing state."""
     engine = _get_engine()
     status = engine.get_status()
     summary = engine.state.summary
@@ -228,7 +208,6 @@ def api_status():
 
 @app.post("/api/start")
 def api_start(req: StartRequest):
-    """Begin a new processing session in a background thread."""
     global _engine
 
     with _engine_lock:
@@ -251,7 +230,6 @@ def api_start(req: StartRequest):
 
 @app.post("/api/stop")
 def api_stop():
-    """Gracefully stop the current processing session."""
     engine = _get_engine()
     if not engine.state.running:
         raise HTTPException(status_code=400, detail="No processing session is running")
@@ -260,13 +238,8 @@ def api_stop():
     return result
 
 
-# ---------------------------------------------------------------------------
-# API Routes — Configuration
-# ---------------------------------------------------------------------------
-
 @app.get("/api/config")
 def api_get_config():
-    """Read current configuration."""
     try:
         config = load_config(CONFIG_PATH)
         return {
@@ -286,18 +259,15 @@ def api_get_config():
 
 @app.put("/api/config")
 def api_update_config(updates: dict[str, Any]):
-    """Update configuration in-place. Writes validated config to disk."""
     import yaml
 
     try:
-        # Load current config as raw YAML
         if Path(CONFIG_PATH).exists():
             with open(CONFIG_PATH) as f:
                 current = yaml.safe_load(f) or {}
         else:
             current = {}
 
-        # Apply updates
         if "root_directory" in updates:
             current["root_directory"] = updates["root_directory"]
 
@@ -307,7 +277,6 @@ def api_update_config(updates: dict[str, Any]):
                 model_section[key] = val
 
         if "tags" in updates:
-            # Validate tags through Pydantic first
             tag_defs = {}
             for name, tdata in updates["tags"].items():
                 td = TagDefinition(**tdata)
@@ -320,13 +289,11 @@ def api_update_config(updates: dict[str, Any]):
                 patterns = [patterns]
             current["exclude_patterns"] = patterns
 
-        # Validate the full config through Pydantic before writing
         from exif_tagger.models.schema import Config as SchemaConfig
         validated = SchemaConfig(**current)
         validated.validate()
         validated.validate_exclude_patterns()
 
-        # Write to disk
         with open(CONFIG_PATH, "w") as f:
             yaml.safe_dump(current, f, default_flow_style=False, sort_keys=False)
 
