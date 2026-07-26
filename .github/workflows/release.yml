@@ -219,35 +219,15 @@ jobs:
 
             if [[ "$TAG_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               VISIBILITY="public"
-              {
-                echo "tags<<EOF"
-                echo "ghcr.io/${{ github.repository }}:${TAG_NAME}"
-                echo "ghcr.io/${{ github.repository }}:latest"
-                echo "ghcr.io/${{ github.repository }}:$VERSION"
-                echo "EOF"
-              } >> "$GITHUB_OUTPUT"
+              echo "tags=ghcr.io/${{ github.repository }}:${TAG_NAME},ghcr.io/${{ github.repository }}:latest,ghcr.io/${{ github.repository }}:$VERSION" >> "$GITHUB_OUTPUT"
             else
               VISIBILITY="private"
-              {
-                echo "tags<<EOF"
-                echo "ghcr.io/${{ github.repository }}:${TAG_NAME}"
-                echo "ghcr.io/${{ github.repository }}:$VERSION"
-                echo "ghcr.io/${{ github.repository }}:beta"
-                echo "ghcr.io/${{ github.repository }}:latest"
-                echo "EOF"
-              } >> "$GITHUB_OUTPUT"
+              echo "tags=ghcr.io/${{ github.repository }}:${TAG_NAME},ghcr.io/${{ github.repository }}:$VERSION,ghcr.io/${{ github.repository }}:beta,ghcr.io/${{ github.repository }}:latest" >> "$GITHUB_OUTPUT"
             fi
           else
             VISIBILITY="private"
             COMMIT_SHA="${{ github.sha }}"
-            {
-              echo "tags<<EOF"
-              echo "ghcr.io/${{ github.repository }}:${COMMIT_SHA}"
-              echo "ghcr.io/${{ github.repository }}:$VERSION"
-              echo "ghcr.io/${{ github.repository }}:beta"
-              echo "ghcr.io/${{ github.repository }}:latest"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
+            echo "tags=ghcr.io/${{ github.repository }}:${COMMIT_SHA},ghcr.io/${{ github.repository }}:$VERSION,ghcr.io/${{ github.repository }}:beta,ghcr.io/${{ github.repository }}:latest" >> "$GITHUB_OUTPUT"
           fi
 
 
