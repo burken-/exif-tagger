@@ -22,10 +22,13 @@ WORKDIR /app
 # Copy Python dependencies from builder stage
 COPY --from=builder /install /usr/local
 
-# Copy application source
+# Copy application source and install as package so imports resolve
 COPY src/ ./src/
 COPY webui/ ./webui/
 COPY config.yaml.example ./config.yaml.example
+COPY pyproject.toml .
+
+RUN pip install -e . --no-cache-dir
 
 # Create directories for runtime data
 RUN mkdir -p /data/images /app/data /app/config
