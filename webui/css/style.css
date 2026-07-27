@@ -170,7 +170,7 @@ fieldset legend {
 
 .tag-card input[type="text"] { flex: 1; }
 .tag-card input[type="number"] { width: 70px; }
-.tag-card .tag-name-input { font-weight: bold; color: #fff; }
+.tag-card .tag-name-input { font-weight: bold; color: #e0e0e0; background: #1a1a2e; border-color: #555; }
 
 /* Exclude pattern items */
 .exclude-item {
