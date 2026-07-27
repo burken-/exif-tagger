@@ -151,12 +151,12 @@ class TestConfig:
 class TestConfigValidationEdgeCases:
     """Test edge cases in config validation."""
 
-    def test_missing_root_directory_raises(self):
-        """Empty or missing root_directory should fail pydantic validation."""
+    def test_missing_root_directory_uses_default(self):
+        """Missing root_directory should fall back to the default /data/images."""
         from exif_tagger.models.schema import Config as Cfg
 
-        with pytest.raises(Exception):
-            Cfg(model={"base_url": "http://x.com", "model_name": "test"})
+        cfg = Cfg(model={"base_url": "http://x.com", "model_name": "test"})
+        assert cfg.root_directory == "/data/images"
 
     def test_tags_from_list_format(self, tmp_path):
         """Tags can also come in list format (handled by validator)."""
