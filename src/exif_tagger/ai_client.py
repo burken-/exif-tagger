@@ -162,9 +162,10 @@ def _call_vision_api(
     model_config: ModelConfig,
     image_path: Path,
     prompt: str,
+    max_dim: int = MAX_IMAGE_DIMENSION,
 ) -> str:
     """Call the vision API with retries. Raises on persistent failure."""
-    image_b64 = _image_to_base64(image_path)
+    image_b64 = _image_to_base64(image_path, max_dim=max_dim)
 
     content_parts = [
         {"type": "text", "text": prompt},
@@ -220,6 +221,7 @@ def tag_image_with_ai(
     model_config: ModelConfig,
     image_path: Path,
     tag_definitions: dict[str, TagDefinition],
+    max_dim: int = MAX_IMAGE_DIMENSION,
 ) -> TaggingResponse:
     if not tag_definitions:
         logger.debug("No tags defined – skipping AI call for %s", image_path.name)
@@ -228,7 +230,7 @@ def tag_image_with_ai(
     prompt = _build_prompt(tag_definitions)
 
     # Call with retry logic
-    raw_response = _call_vision_api(model_config, image_path, prompt)
+    raw_response = _call_vision_api(model_config, image_path, prompt, max_dim=max_dim)
 
     # Parse the response
     try:
