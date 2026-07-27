@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
 
 # Final image – minimal Alpine with exiftool for XPTags support
-FROM alpine:3.19
+FROM python:3.12-alpine
 
 # Install exiftool via apk (pre-built, avoids CPAN test failures)
 RUN apk add --no-cache perl exiftool
@@ -28,7 +28,7 @@ COPY webui/ ./webui/
 COPY config.yaml.example ./config.yaml.example
 
 # Create directories for runtime data
-RUN mkdir -p /app/data /app/config
+RUN mkdir -p /data/images /app/data /app/config
 
 # Expose dashboard port
 EXPOSE 8080

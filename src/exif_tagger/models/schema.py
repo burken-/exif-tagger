@@ -67,7 +67,8 @@ class Config(BaseModel):
     """Hela konfigurationen av exif-tagger."""
 
     root_directory: str = Field(
-        description="Sökväg till rot-mappen som ska skannas rekursivt"
+        default="/data/images",
+        description="Sökväg till rot-mappen som ska skannas rekursivt",
     )
     ai_model: ModelConfig = Field(alias="model", default_factory=ModelConfig)
     tags: dict[str, TagDefinition] = Field(default_factory=dict)
