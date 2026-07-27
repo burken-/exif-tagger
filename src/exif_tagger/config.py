@@ -28,6 +28,7 @@ ALLOWED_ENV_KEYS = frozenset({
     "EXIFTAGGER_MODEL_MAX_TOKENS",
     "EXIFTAGGER_MODEL_TEMPERATURE",
     "EXIFTAGGER_EXCLUDE_PATTERNS",
+    "EXIFTAGGER_MAX_IMAGE_DIMENSION",
 })
 
 
@@ -50,6 +51,7 @@ def _env_key_to_config_key(env_key: str) -> list[str]:
         "model_temperature": ["model", "temperature"],
         "root_directory": ["root_directory"],
         "exclude_patterns": ["exclude_patterns"],
+        "max_image_dimension": ["max_image_dimension"],
     }
 
     stripped = env_key[len(ENV_PREFIX):].lower()  # type: ignore[operator]

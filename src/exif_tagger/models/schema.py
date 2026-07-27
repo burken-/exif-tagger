@@ -76,6 +76,12 @@ class Config(BaseModel):
         default_factory=list,
         description="Reguljära uttryck för sökväg som ska exkluderas från körningen.",
     )
+    max_image_dimension: int = Field(
+        default=720,
+        ge=100,
+        le=4096,
+        description="Maximal bilddimension (bred eller hög) innan skalning till AI-modellen.",
+    )
 
     # Validation & convenience methods
     def validate(self) -> None:
