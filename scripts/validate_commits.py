@@ -74,6 +74,12 @@ def validate_commit(commit_line: str, allow_merge_commits: bool = False):
         print(f"SKIP (revert commit): {message[:80]}")
         return True, None
 
+    # Skip squash-merge commits: GitHub uses PR title as commit msg ending with (#N),
+    # but only skip if it doesn't already match conventional commits format
+    if allow_merge_commits and re.search(r"\(\#\d+\)$", message) and not COMMIT_PATTERN.match(message):
+        print(f"SKIP (squash merge commit): {message[:80]}")
+        return True, None
+
     # Accept legacy first-commit messages from the original project
     if re.match(r"^Initial commit$", message):
         print(f"SKIP (legacy initial commit): {message}")
