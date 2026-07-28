@@ -3,6 +3,11 @@
 const API_BASE = '';
 let pollInterval = null;
 let currentSessionId = null;
+let autoScroll = true;
+
+document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => {
+    autoScroll = e.target.checked;
+});
 
 // ---------------------------------------------------------------------------
 // Tab management
@@ -73,7 +78,9 @@ function updateStatusUI(data) {
 function appendLog(text) {
     const el = document.getElementById('log-output');
     el.textContent += text + '\n';
-    el.scrollTop = el.scrollHeight;
+    if (autoScroll) {
+        el.scrollTop = el.scrollHeight;
+    }
 }
 
 // Start polling when page loads
