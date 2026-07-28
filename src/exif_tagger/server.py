@@ -255,6 +255,7 @@ def api_get_config():
                 "model_name": config.ai_model.model_name,
                 "max_tokens": config.ai_model.max_tokens,
                 "temperature": config.ai_model.temperature,
+                "params": config.ai_model.params or {},
             },
             "tags": {name: td.model_dump() for name, td in config.tags.items()},
             "exclude_patterns": config.exclude_patterns or [],

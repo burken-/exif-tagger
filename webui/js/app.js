@@ -127,6 +127,10 @@ async function loadConfig() {
         tempSlider.value = config.model?.temperature ?? 0.1;
         document.getElementById('temp-value').textContent = config.model?.temperature ?? 0.1;
 
+        // Populate extra params textarea
+        const modelParams = config.model?.params || {};
+        document.getElementById('model-params').value = JSON.stringify(modelParams, null, 2);
+
         // Render tags
         renderTags(config.tags || {});
 
@@ -201,6 +205,18 @@ document.getElementById('btn-save-config').addEventListener('click', async () =>
         if (v) excludes.push(v);
     });
 
+    // Parse extra params JSON
+    const paramsText = document.getElementById('model-params').value.trim();
+    let modelParams = {};
+    if (paramsText) {
+        try {
+            modelParams = JSON.parse(paramsText);
+        } catch (e) {
+            alert('Invalid JSON in Extra Params field');
+            return;
+        }
+    }
+
     try {
         const resp = await fetch(`${API_BASE}/api/config`, {
             method: 'PUT',
@@ -212,6 +228,7 @@ document.getElementById('btn-save-config').addEventListener('click', async () =>
                     model_name: document.getElementById('model-name').value.trim(),
                     max_tokens: parseInt(document.getElementById('model-max-tokens').value) || 500,
                     temperature: parseFloat(document.getElementById('model-temperature').value) || 0.1,
+                    params: modelParams,
                 },
                 tags,
                 exclude_patterns: excludes,
