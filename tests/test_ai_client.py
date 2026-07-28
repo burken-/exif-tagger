@@ -33,10 +33,20 @@ class TestBuildPrompt:
         assert "Natural scenery" in prompt
         assert "Person face visible" in prompt
 
-    def test_includes_thresholds(self):
+    def test_excludes_thresholds_from_prompt(self):
         tags = {"tag1": TagDefinition(description="desc", threshold=0.6)}
         prompt = _build_prompt(tags)
-        assert "threshold: 0.6" in prompt
+        assert "threshold" not in prompt
+
+    def test_includes_all_tags_in_results(self):
+        """Every tag must appear in the prompt so the model scores each one."""
+        tags = {
+            "a": TagDefinition(description="desc a", threshold=0.5),
+            "b": TagDefinition(description="desc b", threshold=0.7),
+            "c": TagDefinition(description="desc c", threshold=0.9),
+        }
+        prompt = _build_prompt(tags)
+        assert "a" in prompt and "b" in prompt and "c" in prompt
 
     def test_request_json_format(self):
         """Prompt should ask for JSON output."""

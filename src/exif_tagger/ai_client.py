@@ -100,23 +100,21 @@ def _image_to_base64(image_path: Path, max_dim: int = MAX_IMAGE_DIMENSION) -> st
 def _build_prompt(tag_definitions: dict[str, TagDefinition]) -> str:
     """Build the prompt that asks the model to evaluate all tags for one image."""
     lines = [
-        "Analyze this image and determine which of the following tags apply.",
-        "For each tag, provide a confidence score between 0.0 and 1.0.",
+        "Analyze this image and assign a confidence score (0.0–1.0) for EACH of the following tags.",
+        "You must include every tag in your response, even if you are not confident it applies.",
         "",
         "Tags to evaluate:",
     ]
 
     for name, definition in sorted(tag_definitions.items()):
-        lines.append(
-            f"- {name} (threshold: {definition.threshold}): \"{definition.description}\""
-        )
+        lines.append(f"- {name}: \"{definition.description}\"")
 
     lines.extend([
         "",
-        "Respond ONLY with valid JSON in this exact format:",
+        "Respond ONLY with valid JSON. Use this structure (no trailing commas):",
         "{",
         '  "results": [',
-        '    {"tag_name": "<tag_name>", "score": <float>, "reason": "<brief reason>"},',
+        '    {"tag_name": "<tag>", "score": 0.85, "reason": "<brief reason>"}',
         "  ]",
         "}",
         "",
