@@ -127,7 +127,7 @@ def _cast_env_value(value: str) -> Any:
         return float(value)
     except ValueError:
         pass
-    if value.startswith("[") or value.startswith("{"):
+    if value.startswith(("[", "{")):
         import json
 
         try:

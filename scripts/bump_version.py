@@ -1,7 +1,8 @@
-import re, sys
+import re
+import sys
 
 new_ver = sys.argv[1]
-with open("pyproject.toml", "r") as f:
+with open("pyproject.toml") as f:
     lines = f.readlines()
 
 for i, line in enumerate(lines):
