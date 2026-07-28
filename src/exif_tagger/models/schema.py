@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -34,6 +35,11 @@ class ModelConfig(BaseModel):
     )
     max_tokens: int = Field(default=500, ge=100, le=4096)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional parameters passed directly to the vision API call. "
+        "Explicit fields like temperature and max_tokens take priority over duplicate keys.",
+    )
 
     @field_validator("api_key", mode="before")
     @classmethod

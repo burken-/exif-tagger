@@ -191,13 +191,17 @@ def _call_vision_api(
                 api_key=model_config.api_key or "",
             )
 
-            response = client.chat.completions.create(
-                model=model_config.model_name,
-                messages=[{"role": "user", "content": content_parts}],
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                **kwargs,
-            )
+            # Merge extra params with explicit fields taking priority
+            api_kwargs = {**model_config.params}
+            api_kwargs.update({
+                "model": model_config.model_name,
+                "messages": [{"role": "user", "content": content_parts}],
+                "max_tokens": model_config.max_tokens,
+                "temperature": model_config.temperature,
+            })
+            api_kwargs.update(kwargs)  # caller-provided kwargs still win
+
+            response = client.chat.completions.create(**api_kwargs)
             return response.choices[0].message.content  # type: ignore[return-value]
 
         except Exception as exc:

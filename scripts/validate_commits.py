@@ -13,7 +13,6 @@ import re
 import subprocess
 import sys
 
-
 ALLOWED_TYPES = [
     "feat",
     "fix",
