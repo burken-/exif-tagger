@@ -32,7 +32,7 @@ header h1 { font-size: 1.5rem; color: #fff; }
     font-weight: 600;
 }
 
-.status-badge.idle { background: #555; color: #ccc; }
+.status-badge.idle { background: #4a4a5a; color: #e8e8f0; }
 .status-badge.running { background: #2ecc71; color: #fff; }
 .status-badge.stopped { background: #e74c3c; color: #fff; }
 
@@ -49,7 +49,11 @@ header h1 { font-size: 1.5rem; color: #fff; }
     font-size: 0.9rem;
 }
 
-.tab-btn.active { background: #0f3460; color: #fff; }
+.tab-btn.active {
+    background: #1a3a6e;
+    color: #fff;
+    border-left: 3px solid #3b82f6;
+}
 .tab-btn:hover:not(.active) { background: #1a1a3e; }
 
 .tab-content { display: none; }
@@ -57,10 +61,12 @@ header h1 { font-size: 1.5rem; color: #fff; }
 
 /* Cards */
 .card {
-    background: #16213e;
+    background: #1c2744;
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 1px solid #2a3555;
 }
 
 .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: #fff; }
@@ -78,8 +84,8 @@ header h1 { font-size: 1.5rem; color: #fff; }
 .form-group input, .form-group select {
     width: 100%;
     padding: 8px 12px;
-    background: #1a1a2e;
-    border: 1px solid #333;
+    background: #1f2940;
+    border: 1px solid #44506a;
     border-radius: 4px;
     color: #e0e0e0;
     font-size: 0.9rem;
@@ -94,7 +100,8 @@ header h1 { font-size: 1.5rem; color: #fff; }
 
 .form-group input:focus, .form-group select:focus {
     outline: none;
-    border-color: #0f3460;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.3);
 }
 
 .form-row { display: flex; gap: 16px; }
@@ -122,6 +129,11 @@ fieldset legend {
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.9rem;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+    transform: translateY(-1px);
 }
 
 .btn-primary { background: #0f3460; color: #fff; }
@@ -233,7 +245,7 @@ th { color: #888; font-weight: 600; }
 @keyframes fadeIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
 
 /* Temperature display */
-#temp-value { display: inline-block; margin-left: 8px; color: #2ecc71; font-weight: bold; }
+#temp-value { display: inline-block; margin-left: 8px; color: #f59e0b; font-weight: bold; }
 
 /* Responsive */
 @media (max-width: 600px) {
