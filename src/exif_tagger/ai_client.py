@@ -97,7 +97,10 @@ def _image_to_base64(image_path: Path, max_dim: int = MAX_IMAGE_DIMENSION) -> st
         return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
-def _build_prompt(tag_definitions: dict[str, TagDefinition]) -> str:
+def _build_prompt(
+    tag_definitions: dict[str, TagDefinition],
+    use_structured_outputs: bool = False,
+) -> str:
     """Build the prompt that asks the model to evaluate all tags for one image."""
     lines = [
         "Analyze this image and assign a confidence score (0.0–1.0) for EACH of the following tags.",
@@ -109,17 +112,18 @@ def _build_prompt(tag_definitions: dict[str, TagDefinition]) -> str:
     for name, definition in sorted(tag_definitions.items()):
         lines.append(f"- {name}: \"{definition.description}\"")
 
-    lines.extend([
-        "",
-        "Respond ONLY with valid JSON. Use this structure (no trailing commas):",
-        "{",
-        '  "results": [',
-        '    {"tag_name": "<tag>", "score": 0.85, "reason": "<brief reason>"}',
-        "  ]",
-        "}",
-        "",
-        "Do not include any text outside of the JSON object.",
-    ])
+    if not use_structured_outputs:
+        lines.extend([
+            "",
+            "Respond ONLY with valid JSON. Use this structure (no trailing commas):",
+            "{",
+            '  "results": [',
+            '    {"tag_name": "<tag>", "score": 0.85, "reason": "<brief reason>"}',
+            "  ]",
+            "}",
+            "",
+            "Do not include any text outside of the JSON object.",
+        ])
 
     return "\n".join(lines)
 
@@ -154,6 +158,18 @@ def _parse_response(content: str) -> TaggingResponse:
             logger.warning("Skipping invalid tag result in AI response: %s", exc)
 
     return TaggingResponse(results=tag_results, summary=parsed.get("summary"))
+
+
+def _build_structured_output_config() -> dict:
+    """Build the response_format config for OpenAI structured outputs."""
+    schema = TaggingResponse.model_json_schema()
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "tagging_response",
+            "schema": schema,
+        },
+    }
 
 
 def _call_vision_api(
@@ -197,6 +213,11 @@ def _call_vision_api(
                 "max_tokens": model_config.max_tokens,
                 "temperature": model_config.temperature,
             })
+
+            # Structured outputs: guarantee valid JSON matching our schema
+            if model_config.use_structured_outputs:  # type: ignore[attr-defined]
+                api_kwargs["response_format"] = _build_structured_output_config()
+
             api_kwargs.update(kwargs)  # caller-provided kwargs still win
 
             response = client.chat.completions.create(**api_kwargs)
@@ -229,7 +250,8 @@ def tag_image_with_ai(
         logger.debug("No tags defined – skipping AI call for %s", image_path.name)
         return TaggingResponse(results=[])
 
-    prompt = _build_prompt(tag_definitions)
+    use_so = getattr(model_config, "use_structured_outputs", False)  # type: ignore[attr-defined]
+    prompt = _build_prompt(tag_definitions, use_structured_outputs=use_so)
 
     # Call with retry logic
     raw_response = _call_vision_api(model_config, image_path, prompt, max_dim=max_dim)
