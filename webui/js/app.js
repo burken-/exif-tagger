@@ -9,6 +9,10 @@ document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => 
     autoScroll = e.target.checked;
 });
 
+document.getElementById('btn-clear-log').addEventListener('click', () => {
+    document.getElementById('log-output').innerHTML = '';
+});
+
 // ---------------------------------------------------------------------------
 // Toast notifications
 // ---------------------------------------------------------------------------
@@ -62,11 +66,13 @@ function updateStatusUI(data) {
     const progressText = document.getElementById('progress-text');
 
     if (data.running) {
+        isRunning = true;
         indicator.textContent = 'Running';
         indicator.className = 'status-badge running';
         btnStart.disabled = true;
         btnStop.disabled = false;
     } else if (data.stopRequested) {
+        isRunning = false;
         indicator.textContent = 'Stopping...';
         indicator.className = 'status-badge stopped';
     } else {
@@ -81,10 +87,12 @@ function updateStatusUI(data) {
             indicator.style.background = '';
             indicator.style.color = '';
         }
+        isRunning = false;
         btnStart.disabled = false;
         btnStop.disabled = true;
     }
 
+    // Update progress
     if (data.total > 0) {
         const pct = data.progressPct || 0;
         progressBar.style.width = `${pct}%`;
@@ -99,6 +107,8 @@ function updateStatusUI(data) {
     if (data.summary && data.summary.errors) {
         data.summary.errors.forEach(err => appendLog(`Error: ${err}`, 'error'));
     }
+
+    setupPolling();
 }
 
 function appendLog(text, severity = 'info') {
@@ -112,9 +122,15 @@ function appendLog(text, severity = 'info') {
     }
 }
 
+let isRunning = false;
+
+function setupPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(fetchStatus, isRunning ? 1000 : 5000);
+}
+
 // Start polling when page loads
-pollInterval = setInterval(fetchStatus, 2000);
-fetchStatus();
+fetchStatus().then(() => setupPolling());
 
 // ---------------------------------------------------------------------------
 // Processing controls
@@ -337,6 +353,51 @@ document.getElementById('btn-save-config').addEventListener('click', async () =>
     }
 });
 
+// Export config as JSON download
+document.getElementById('btn-export-config').addEventListener('click', async () => {
+    try {
+        const resp = await fetch(`${API_BASE}/api/config`);
+        if (!resp.ok) { showToast('Failed to export config', 'error'); return; }
+        const config = await resp.json();
+        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'exif-tagger-config.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) { showToast('Export failed: ' + e.message, 'error'); }
+});
+
+// Import config from JSON file
+document.getElementById('import-config-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+        const text = await file.text();
+        const config = JSON.parse(text);
+        document.getElementById('config-root').value = config.root_directory || '';
+        document.getElementById('model-base-url').value = config.model?.base_url || '';
+        document.getElementById('model-name').value = config.model?.model_name || '';
+        document.getElementById('model-max-tokens').value = config.model?.max_tokens || 500;
+        const tempSlider = document.getElementById('model-temperature');
+        const tempNum = document.getElementById('model-temp-number');
+        const tempVal = config.model?.temperature ?? 0.1;
+        tempSlider.value = tempVal;
+        document.getElementById('temp-value').textContent = tempVal;
+        tempNum.value = tempVal;
+        document.getElementById('model-use-structured').checked = config.model?.use_structured_outputs || false;
+        document.getElementById('model-max-dimension').value = config.model?.max_image_dimension || 720;
+        const modelParams = config.model?.params || {};
+        document.getElementById('model-params').value = JSON.stringify(modelParams, null, 2);
+        renderTags(config.tags || {});
+        renderExcludes(config.exclude_patterns || []);
+        showToast('Config imported — click Save to apply', 'success');
+    } catch (err) { showToast('Failed to import config: ' + err.message, 'error'); }
+    // Reset input so the same file can be re-imported
+    e.target.value = '';
+});
+
 // ---------------------------------------------------------------------------
 // Schedule management
 // ---------------------------------------------------------------------------
@@ -438,6 +499,30 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
             showToast('Failed to add schedule: ' + (err.detail || 'Unknown error'), 'error');
         }
     } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    // Ctrl+Enter to start processing
+    if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        const btnStart = document.getElementById('btn-start');
+        if (!btnStart.disabled) btnStart.click();
+    }
+    // Escape to stop
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        const btnStop = document.getElementById('btn-stop');
+        if (!btnStop.disabled) btnStop.click();
+    }
+    // Number keys for tabs
+    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 3 && tabBtns[num - 1]) {
+            tabBtns[num - 1].click();
+        }
+    }
 });
 
 // Load config on first tab activation
