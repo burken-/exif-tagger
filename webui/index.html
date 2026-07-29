@@ -90,6 +90,20 @@
                         </div>
                     </div>
                     <div class="form-group">
+                        <label for="model-api-key">API Key</label>
+                        <input type="password" id="model-api-key" placeholder="sk-... (optional)">
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="model-use-structured">Use Structured Outputs</label>
+                            <input type="checkbox" id="model-use-structured" style="width:auto;margin-top:6px;">
+                        </div>
+                        <div class="form-group">
+                            <label for="model-max-dimension">Max Image Dimension</label>
+                            <input type="number" id="model-max-dimension" min="100" max="4096" value="720">
+                        </div>
+                    </div>
+                    <div class="form-group">
                         <label for="model-params">Extra Params (JSON)</label>
                         <textarea id="model-params" rows="4" placeholder='{"top_p": 0.95, "response_format": {"type": "json_object"}}'></textarea>
                     </div>

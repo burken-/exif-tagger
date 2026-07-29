@@ -160,8 +160,13 @@ def _run_schedule_job(schedule_id: str) -> None:
 
 
 def _setup_scheduler() -> None:
-    """Initialize APScheduler with loaded schedules."""
+    """Initialize or reinitialize APScheduler with loaded schedules."""
     global _scheduler
+
+    # Shutdown any existing scheduler before creating a new one.
+    if _scheduler and _scheduler.running:
+        logger.info("Shutting down existing scheduler before rebuild")
+        _scheduler.shutdown(wait=False)
 
     _schedules.clear()
     _schedules.update(_load_schedules())
@@ -209,6 +214,9 @@ def api_status():
     engine = _get_engine()
     status = engine.get_status()
     summary = engine.state.summary
+    # Ensure total is consistent between top-level and summary.
+    if "total" in status:
+        status["total"] = summary.get("total_images_found", status["total"])
     return {**status, "summary": summary}
 
 
@@ -255,6 +263,9 @@ def api_get_config():
                 "model_name": config.ai_model.model_name,
                 "max_tokens": config.ai_model.max_tokens,
                 "temperature": config.ai_model.temperature,
+                "api_key": config.ai_model.api_key or "",
+                "use_structured_outputs": getattr(config.ai_model, "use_structured_outputs", False),
+                "max_image_dimension": getattr(config.ai_model, "max_image_dimension", 720),
                 "params": config.ai_model.params or {},
             },
             "tags": {name: td.model_dump() for name, td in config.tags.items()},

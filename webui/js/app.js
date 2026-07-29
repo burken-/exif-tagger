@@ -134,6 +134,13 @@ async function loadConfig() {
         tempSlider.value = config.model?.temperature ?? 0.1;
         document.getElementById('temp-value').textContent = config.model?.temperature ?? 0.1;
 
+        // Populate API key field (only if server returned one)
+        document.getElementById('model-api-key').value = config.model?.api_key || '';
+
+        // Populate structured outputs and max dimension
+        document.getElementById('model-use-structured').checked = config.model?.use_structured_outputs || false;
+        document.getElementById('model-max-dimension').value = config.model?.max_image_dimension || 720;
+
         // Populate extra params textarea
         const modelParams = config.model?.params || {};
         document.getElementById('model-params').value = JSON.stringify(modelParams, null, 2);
@@ -235,6 +242,9 @@ document.getElementById('btn-save-config').addEventListener('click', async () =>
                     model_name: document.getElementById('model-name').value.trim(),
                     max_tokens: parseInt(document.getElementById('model-max-tokens').value) || 500,
                     temperature: parseFloat(document.getElementById('model-temperature').value) || 0.1,
+                    api_key: document.getElementById('model-api-key').value.trim() || null,
+                    use_structured_outputs: document.getElementById('model-use-structured').checked,
+                    max_image_dimension: parseInt(document.getElementById('model-max-dimension').value) || 720,
                     params: modelParams,
                 },
                 tags,
