@@ -215,7 +215,7 @@ def api_status():
     status = engine.get_status()
     summary = engine.state.summary
     # Ensure total is consistent between top-level and summary.
-    if "total" in status:
+    if "total" in status and summary is not None:
         status["total"] = summary.get("total_images_found", status["total"])
     return {**status, "summary": summary}
 
