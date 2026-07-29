@@ -318,7 +318,17 @@ def api_update_config(updates: dict[str, Any]):
         return {"status": "updated"}
 
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid config update: {e}")
+        # Format Pydantic validation errors into a human-readable message
+        error_detail = str(e)
+        try:
+            import re
+            # Extract field: error pairs from Pydantic output
+            matches = re.findall(r"(\w+):\s*(.+?)(?=,\s*\w+:|$)", error_detail)
+            if matches:
+                error_detail = "; ".join(f"{field}: {msg.strip()}" for field, msg in matches)
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail=f"Invalid config update: {error_detail}")
 
 
 # ---------------------------------------------------------------------------

@@ -25,8 +25,9 @@
             <div class="card">
                 <h2>New Session</h2>
                 <div class="form-group">
-                    <label for="folder-path">Folder Path</label>
+                    <label for="folder-path">Folder Path (optional, overrides config)</label>
                     <input type="text" id="folder-path" placeholder="/data/images/this-month">
+                    <small class="field-helper">Leave empty to use the root directory from configuration</small>
                 </div>
                 <div class="form-group">
                     <label for="max-images">Max Images (optional)</label>
@@ -53,7 +54,7 @@
                         <input type="checkbox" id="auto-scroll-toggle" checked> Auto scroll
                     </label>
                 </div>
-                <pre id="log-output" class="log-panel"></pre>
+                <div id="log-output" class="log-panel"></div>
             </div>
         </section>
 
@@ -183,6 +184,8 @@
             </div>
         </section>
     </div>
+
+    <div id="toast-container"></div>
 
     <script src="/js/app.js"></script>
 </body>

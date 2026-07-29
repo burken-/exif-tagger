@@ -10,6 +10,23 @@ document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => 
 });
 
 // ---------------------------------------------------------------------------
+// Toast notifications
+// ---------------------------------------------------------------------------
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(50px)';
+        toast.style.transition = 'opacity 0.3s, transform 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
+// ---------------------------------------------------------------------------
 // Tab management
 // ---------------------------------------------------------------------------
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -53,8 +70,17 @@ function updateStatusUI(data) {
         indicator.textContent = 'Stopping...';
         indicator.className = 'status-badge stopped';
     } else {
-        indicator.textContent = data.summary ? 'Completed' : 'Idle';
-        indicator.className = 'status-badge idle';
+        const hasFailures = data.summary && (data.summary.failed > 0 || (data.summary.errors && data.summary.errors.length > 0));
+        indicator.textContent = data.summary ? (hasFailures ? 'Completed with errors' : 'Completed') : 'Idle';
+        if (hasFailures) {
+            indicator.className = 'status-badge running'; // yellow/orange reuse — running badge is green; use stopped for orange-red or a custom color
+            indicator.style.background = '#e67e22';
+            indicator.style.color = '#fff';
+        } else {
+            indicator.className = 'status-badge idle';
+            indicator.style.background = '';
+            indicator.style.color = '';
+        }
         btnStart.disabled = false;
         btnStop.disabled = true;
     }
@@ -71,13 +97,16 @@ function updateStatusUI(data) {
     // Update log output if available
     const logOutput = document.getElementById('log-output');
     if (data.summary && data.summary.errors) {
-        data.summary.errors.forEach(err => appendLog(`Error: ${err}`));
+        data.summary.errors.forEach(err => appendLog(`Error: ${err}`, 'error'));
     }
 }
 
-function appendLog(text) {
+function appendLog(text, severity = 'info') {
     const el = document.getElementById('log-output');
-    el.textContent += text + '\n';
+    const line = document.createElement('div');
+    line.className = `log-line ${severity}`;
+    line.textContent = text;
+    el.appendChild(line);
     if (autoScroll) {
         el.scrollTop = el.scrollHeight;
     }
@@ -101,20 +130,20 @@ document.getElementById('btn-start').addEventListener('click', async () => {
             body: JSON.stringify({ rootDirectory: folderPath, maxImages }),
         });
         if (resp.ok) {
-            appendLog('Session started.');
-            document.getElementById('log-output').textContent = '';
+            document.getElementById('log-output').innerHTML = '';
+            appendLog('Session started.', 'info');
         } else {
             const err = await resp.json();
-            alert(err.detail || 'Failed to start session');
+            showToast(err.detail || 'Failed to start session', 'error');
         }
-    } catch (e) { alert('Network error: ' + e.message); }
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 });
 
 document.getElementById('btn-stop').addEventListener('click', async () => {
     try {
         const resp = await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
-        if (resp.ok) appendLog('Stop requested.');
-    } catch (e) { alert('Network error: ' + e.message); }
+        if (resp.ok) appendLog('Stop requested.', 'info');
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 });
 
 // ---------------------------------------------------------------------------
@@ -203,35 +232,40 @@ document.getElementById('model-temperature').addEventListener('input', (e) => {
 });
 
 document.getElementById('btn-save-config').addEventListener('click', async () => {
-    const tags = {};
-    document.querySelectorAll('.tag-card').forEach(card => {
-        const name = card.querySelector('.tag-name-input').value.trim();
-        if (!name) return;
-        tags[name] = {
-            description: card.querySelector('.tag-desc-input').value,
-            threshold: parseFloat(card.querySelector('.tag-threshold-input').value) || 0.7,
-        };
-    });
-
-    const excludes = [];
-    document.querySelectorAll('.exclude-input').forEach(input => {
-        const v = input.value.trim();
-        if (v) excludes.push(v);
-    });
-
-    // Parse extra params JSON
-    const paramsText = document.getElementById('model-params').value.trim();
-    let modelParams = {};
-    if (paramsText) {
-        try {
-            modelParams = JSON.parse(paramsText);
-        } catch (e) {
-            alert('Invalid JSON in Extra Params field');
-            return;
-        }
-    }
+    const btn = document.getElementById('btn-save-config');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving...';
 
     try {
+        const tags = {};
+        document.querySelectorAll('.tag-card').forEach(card => {
+            const name = card.querySelector('.tag-name-input').value.trim();
+            if (!name) return;
+            tags[name] = {
+                description: card.querySelector('.tag-desc-input').value,
+                threshold: parseFloat(card.querySelector('.tag-threshold-input').value) || 0.7,
+            };
+        });
+
+        const excludes = [];
+        document.querySelectorAll('.exclude-input').forEach(input => {
+            const v = input.value.trim();
+            if (v) excludes.push(v);
+        });
+
+        // Parse extra params JSON
+        const paramsText = document.getElementById('model-params').value.trim();
+        let modelParams = {};
+        if (paramsText) {
+            try {
+                modelParams = JSON.parse(paramsText);
+            } catch (e) {
+                showToast('Invalid JSON in Extra Params field', 'error');
+                return;
+            }
+        }
+
         const resp = await fetch(`${API_BASE}/api/config`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -252,12 +286,16 @@ document.getElementById('btn-save-config').addEventListener('click', async () =>
             }),
         });
         if (resp.ok) {
-            alert('Configuration saved successfully.');
+            showToast('Configuration saved successfully.', 'success');
         } else {
             const err = await resp.json();
-            alert('Failed to save config: ' + (err.detail || 'Unknown error'));
+            showToast('Failed to save config: ' + (err.detail || 'Unknown error'), 'error');
         }
-    } catch (e) { alert('Network error: ' + e.message); }
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+    finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
 });
 
 // ---------------------------------------------------------------------------
@@ -301,7 +339,7 @@ function renderSchedules(schedules) {
             try {
                 const resp = await fetch(`${API_BASE}/api/schedule/${btn.dataset.id}`, { method: 'DELETE' });
                 if (resp.ok) loadSchedules();
-            } catch (e) { alert('Network error'); }
+            } catch (e) { showToast('Network error', 'error'); }
         });
     });
 }
@@ -331,7 +369,7 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
     const folder = document.getElementById('schedule-folder').value.trim();
     const type = document.getElementById('schedule-type').value;
 
-    if (!name || !folder) { alert('Name and folder are required'); return; }
+    if (!name || !folder) { showToast('Name and folder are required', 'error'); return; }
 
     const body = { name, folder };
     if (type === 'interval') {
@@ -347,13 +385,13 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
             body: JSON.stringify(body),
         });
         if (resp.ok) {
-            alert('Schedule added.');
+            showToast('Schedule added.', 'success');
             loadSchedules();
         } else {
             const err = await resp.json();
-            alert('Failed to add schedule: ' + (err.detail || 'Unknown error'));
+            showToast('Failed to add schedule: ' + (err.detail || 'Unknown error'), 'error');
         }
-    } catch (e) { alert('Network error: ' + e.message); }
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 });
 
 // Load config on first tab activation

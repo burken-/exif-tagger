@@ -85,6 +85,13 @@ header h1 { font-size: 1.5rem; color: #fff; }
     font-size: 0.9rem;
 }
 
+.field-helper {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: #777;
+}
+
 .form-group input:focus, .form-group select:focus {
     outline: none;
     border-color: #0f3460;
@@ -154,8 +161,12 @@ fieldset legend {
     font-family: 'Courier New', monospace;
     font-size: 0.8rem;
     line-height: 1.5;
-    color: #7ee787;
 }
+
+.log-line { margin-bottom: 2px; }
+.log-line.error { color: #f87171; }
+.log-line.warning { color: #fb923c; }
+.log-line.info, .log-line.success { color: #7ee787; }
 
 .log-header {
     display: flex;
@@ -212,6 +223,14 @@ th { color: #888; font-weight: 600; }
 .preset-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .preset-buttons button { padding: 6px 12px; background: #1a1a2e; border: 1px solid #333; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
 .preset-buttons button:hover { background: #0f3460; color: #fff; }
+
+/* Toast notifications */
+#toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+.toast { padding: 12px 20px; margin-bottom: 8px; border-radius: 6px; color: #fff; font-size: 0.9rem; animation: fadeIn 0.3s ease; min-width: 250px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.toast.success { background: #2ecc71; }
+.toast.error { background: #e74c3c; }
+.toast.info { background: #3498db; }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
 
 /* Temperature display */
 #temp-value { display: inline-block; margin-left: 8px; color: #2ecc71; font-weight: bold; }
