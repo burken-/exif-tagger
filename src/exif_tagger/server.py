@@ -33,8 +33,14 @@ _engine: PipelineEngine | None = None
 _engine_lock = threading.Lock()
 _schedules: dict[str, ScheduleModel] = {}
 _scheduler: BackgroundScheduler | None = None
-CONFIG_PATH = os.environ.get("EXIFTAGGER_CONFIG_FILE", "/app/config.yaml")
-SCHEDULES_FILE = Path("/app/schedules.json")
+_config_dir = Path(__file__).resolve().parent.parent.parent
+CONFIG_PATH = os.environ.get(
+    "EXIFTAGGER_CONFIG_FILE", str(_config_dir / "config.yaml")
+)
+_schedules_env = os.environ.get("EXIFTAGGER_SCHEDULES_FILE", "")
+SCHEDULES_FILE = (
+    Path(_schedules_env) if _schedules_env else _config_dir / "schedules.json"
+)
 
 
 class StartRequest(BaseModel):
@@ -249,6 +255,7 @@ def api_get_config():
                 "model_name": config.ai_model.model_name,
                 "max_tokens": config.ai_model.max_tokens,
                 "temperature": config.ai_model.temperature,
+                "params": config.ai_model.params or {},
             },
             "tags": {name: td.model_dump() for name, td in config.tags.items()},
             "exclude_patterns": config.exclude_patterns or [],

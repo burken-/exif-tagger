@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -34,6 +35,15 @@ class ModelConfig(BaseModel):
     )
     max_tokens: int = Field(default=500, ge=100, le=4096)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    use_structured_outputs: bool = Field(
+        default=False,
+        description="When True, uses OpenAI response_format with JSON Schema for guaranteed valid structured output.",
+    )
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Additional parameters passed directly to the vision API call. "
+        "Explicit fields like temperature and max_tokens take priority over duplicate keys.",
+    )
 
     @field_validator("api_key", mode="before")
     @classmethod
@@ -67,13 +77,20 @@ class Config(BaseModel):
     """Hela konfigurationen av exif-tagger."""
 
     root_directory: str = Field(
-        description="Sökväg till rot-mappen som ska skannas rekursivt"
+        default="/data/images",
+        description="Sökväg till rot-mappen som ska skannas rekursivt",
     )
     ai_model: ModelConfig = Field(alias="model", default_factory=ModelConfig)
     tags: dict[str, TagDefinition] = Field(default_factory=dict)
     exclude_patterns: list[str] = Field(
         default_factory=list,
         description="Reguljära uttryck för sökväg som ska exkluderas från körningen.",
+    )
+    max_image_dimension: int = Field(
+        default=720,
+        ge=100,
+        le=4096,
+        description="Maximal bilddimension (bred eller hög) innan skalning till AI-modellen.",
     )
 
     # Validation & convenience methods

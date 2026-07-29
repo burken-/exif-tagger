@@ -27,7 +27,9 @@ ALLOWED_ENV_KEYS = frozenset({
     "EXIFTAGGER_MODEL_API_KEY",
     "EXIFTAGGER_MODEL_MAX_TOKENS",
     "EXIFTAGGER_MODEL_TEMPERATURE",
+    "EXIFTAGGER_MODEL_PARAMS",
     "EXIFTAGGER_EXCLUDE_PATTERNS",
+    "EXIFTAGGER_MAX_IMAGE_DIMENSION",
 })
 
 
@@ -48,8 +50,10 @@ def _env_key_to_config_key(env_key: str) -> list[str]:
         "model_api_key": ["model", "api_key"],
         "model_max_tokens": ["model", "max_tokens"],
         "model_temperature": ["model", "temperature"],
+        "model_params": ["model", "params"],
         "root_directory": ["root_directory"],
         "exclude_patterns": ["exclude_patterns"],
+        "max_image_dimension": ["max_image_dimension"],
     }
 
     stripped = env_key[len(ENV_PREFIX):].lower()  # type: ignore[operator]
@@ -123,12 +127,12 @@ def _cast_env_value(value: str) -> Any:
         return float(value)
     except ValueError:
         pass
-    if value.startswith("["):
+    if value.startswith(("[", "{")):
         import json
 
         try:
             parsed = json.loads(value)
-            if isinstance(parsed, list):
+            if isinstance(parsed, (list, dict)):
                 return parsed
         except (json.JSONDecodeError, TypeError):
             pass

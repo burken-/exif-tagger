@@ -13,6 +13,9 @@ model:
   api_key: ""                                 # Or set env var OPENAI_API_KEY
   max_tokens: 500                             # Max tokens per response
   temperature: 0.1                            # Low for deterministic output
+  # params:                                   # Extra model parameters passed to the API
+  #   top_p: 0.95                             # Nucleus sampling parameter
+  #   response_format: {"type": "json_object"}# Force JSON-structured output
 
 # Tag definitions – each tag has a description and threshold (0-1)
 # Images scoring >= threshold will have the tag written to XPTags.

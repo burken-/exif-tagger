@@ -8,6 +8,7 @@ import pytest
 
 from exif_tagger.ai_client import (
     _build_prompt,
+    _build_structured_output_config,
     _parse_response,
     tag_image_with_ai,
 )
@@ -33,10 +34,20 @@ class TestBuildPrompt:
         assert "Natural scenery" in prompt
         assert "Person face visible" in prompt
 
-    def test_includes_thresholds(self):
+    def test_excludes_thresholds_from_prompt(self):
         tags = {"tag1": TagDefinition(description="desc", threshold=0.6)}
         prompt = _build_prompt(tags)
-        assert "threshold: 0.6" in prompt
+        assert "threshold" not in prompt
+
+    def test_includes_all_tags_in_results(self):
+        """Every tag must appear in the prompt so the model scores each one."""
+        tags = {
+            "a": TagDefinition(description="desc a", threshold=0.5),
+            "b": TagDefinition(description="desc b", threshold=0.7),
+            "c": TagDefinition(description="desc c", threshold=0.9),
+        }
+        prompt = _build_prompt(tags)
+        assert "a" in prompt and "b" in prompt and "c" in prompt
 
     def test_request_json_format(self):
         """Prompt should ask for JSON output."""
@@ -121,3 +132,41 @@ class TestNoTagsSkipsAiCall:
 
         result = tag_image_with_ai(model_config, __import__("pathlib").Path("/dev/null"), {})
         assert len(result.results) == 0
+
+
+class TestStructuredOutputs:
+    """Tests for OpenAI structured outputs (response_format)."""
+
+    def test_prompt_excludes_json_instructions_when_so_enabled(self):
+        tags = {"landscape": TagDefinition(description="Natural scenery", threshold=0.7)}
+        prompt = _build_prompt(tags, use_structured_outputs=True)
+        assert '"results"' not in prompt
+        assert "Respond ONLY with valid JSON" not in prompt
+
+    def test_prompt_includes_json_instructions_when_so_disabled(self):
+        tags = {"landscape": TagDefinition(description="Natural scenery", threshold=0.7)}
+        prompt = _build_prompt(tags, use_structured_outputs=False)
+        assert '"results"' in prompt
+        assert "Respond ONLY with valid JSON" in prompt
+
+    def test_structured_output_config_has_schema(self):
+        config = _build_structured_output_config()
+        assert config["type"] == "json_schema"
+        assert "json_schema" in config
+        schema = config["json_schema"]["schema"]
+        assert "$defs" in schema or "properties" in schema  # Pydantic generates $defs for nested models
+
+    def test_tag_image_with_ai_passes_response_format(self, sample_jpeg, mock_openai):
+        """When use_structured_outputs=True, response_format should be passed to the API."""
+        model_config = ModelConfig(
+            base_url="https://api.test.com/v1",
+            model_name="test-model",
+            use_structured_outputs=True,
+        )
+
+        tags = {
+            "landscape": TagDefinition(description="Natural scenery", threshold=0.7),
+        }
+
+        result = tag_image_with_ai(model_config, sample_jpeg, tags)
+        assert len(result.results) >= 1

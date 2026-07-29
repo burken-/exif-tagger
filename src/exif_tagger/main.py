@@ -288,7 +288,10 @@ class PipelineEngine:
                     logger.info("Processing image %d/%d: %s", i, len(images_to_process), img_path.name)
 
                 try:
-                    response = tag_image_with_ai(config.ai_model, img_path, config.tags)
+                    response = tag_image_with_ai(
+                        config.ai_model, img_path, config.tags,
+                        max_dim=config.max_image_dimension,
+                    )
 
                     matched_tag_names = []
                     for tr in response.results:

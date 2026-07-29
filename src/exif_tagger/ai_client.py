@@ -97,31 +97,33 @@ def _image_to_base64(image_path: Path, max_dim: int = MAX_IMAGE_DIMENSION) -> st
         return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
-def _build_prompt(tag_definitions: dict[str, TagDefinition]) -> str:
+def _build_prompt(
+    tag_definitions: dict[str, TagDefinition],
+    use_structured_outputs: bool = False,
+) -> str:
     """Build the prompt that asks the model to evaluate all tags for one image."""
     lines = [
-        "Analyze this image and determine which of the following tags apply.",
-        "For each tag, provide a confidence score between 0.0 and 1.0.",
+        "Analyze this image and assign a confidence score (0.0–1.0) for EACH of the following tags.",
+        "You must include every tag in your response, even if you are not confident it applies.",
         "",
         "Tags to evaluate:",
     ]
 
     for name, definition in sorted(tag_definitions.items()):
-        lines.append(
-            f"- {name} (threshold: {definition.threshold}): \"{definition.description}\""
-        )
+        lines.append(f"- {name}: \"{definition.description}\"")
 
-    lines.extend([
-        "",
-        "Respond ONLY with valid JSON in this exact format:",
-        "{",
-        '  "results": [',
-        '    {"tag_name": "<tag_name>", "score": <float>, "reason": "<brief reason>"},',
-        "  ]",
-        "}",
-        "",
-        "Do not include any text outside of the JSON object.",
-    ])
+    if not use_structured_outputs:
+        lines.extend([
+            "",
+            "Respond ONLY with valid JSON. Use this structure (no trailing commas):",
+            "{",
+            '  "results": [',
+            '    {"tag_name": "<tag>", "score": 0.85, "reason": "<brief reason>"}',
+            "  ]",
+            "}",
+            "",
+            "Do not include any text outside of the JSON object.",
+        ])
 
     return "\n".join(lines)
 
@@ -158,13 +160,26 @@ def _parse_response(content: str) -> TaggingResponse:
     return TaggingResponse(results=tag_results, summary=parsed.get("summary"))
 
 
+def _build_structured_output_config() -> dict:
+    """Build the response_format config for OpenAI structured outputs."""
+    schema = TaggingResponse.model_json_schema()
+    return {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "tagging_response",
+            "schema": schema,
+        },
+    }
+
+
 def _call_vision_api(
     model_config: ModelConfig,
     image_path: Path,
     prompt: str,
+    max_dim: int = MAX_IMAGE_DIMENSION,
 ) -> str:
     """Call the vision API with retries. Raises on persistent failure."""
-    image_b64 = _image_to_base64(image_path)
+    image_b64 = _image_to_base64(image_path, max_dim=max_dim)
 
     content_parts = [
         {"type": "text", "text": prompt},
@@ -190,13 +205,22 @@ def _call_vision_api(
                 api_key=model_config.api_key or "",
             )
 
-            response = client.chat.completions.create(
-                model=model_config.model_name,
-                messages=[{"role": "user", "content": content_parts}],
-                max_tokens=model_config.max_tokens,
-                temperature=model_config.temperature,
-                **kwargs,
-            )
+            # Merge extra params with explicit fields taking priority
+            api_kwargs = {**model_config.params}
+            api_kwargs.update({
+                "model": model_config.model_name,
+                "messages": [{"role": "user", "content": content_parts}],
+                "max_tokens": model_config.max_tokens,
+                "temperature": model_config.temperature,
+            })
+
+            # Structured outputs: guarantee valid JSON matching our schema
+            if model_config.use_structured_outputs:  # type: ignore[attr-defined]
+                api_kwargs["response_format"] = _build_structured_output_config()
+
+            api_kwargs.update(kwargs)  # caller-provided kwargs still win
+
+            response = client.chat.completions.create(**api_kwargs)
             return response.choices[0].message.content  # type: ignore[return-value]
 
         except Exception as exc:
@@ -220,15 +244,17 @@ def tag_image_with_ai(
     model_config: ModelConfig,
     image_path: Path,
     tag_definitions: dict[str, TagDefinition],
+    max_dim: int = MAX_IMAGE_DIMENSION,
 ) -> TaggingResponse:
     if not tag_definitions:
         logger.debug("No tags defined – skipping AI call for %s", image_path.name)
         return TaggingResponse(results=[])
 
-    prompt = _build_prompt(tag_definitions)
+    use_so = getattr(model_config, "use_structured_outputs", False)  # type: ignore[attr-defined]
+    prompt = _build_prompt(tag_definitions, use_structured_outputs=use_so)
 
     # Call with retry logic
-    raw_response = _call_vision_api(model_config, image_path, prompt)
+    raw_response = _call_vision_api(model_config, image_path, prompt, max_dim=max_dim)
 
     # Parse the response
     try:
