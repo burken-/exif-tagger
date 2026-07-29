@@ -9,6 +9,27 @@ document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => 
     autoScroll = e.target.checked;
 });
 
+document.getElementById('btn-clear-log').addEventListener('click', () => {
+    document.getElementById('log-output').innerHTML = '';
+});
+
+// ---------------------------------------------------------------------------
+// Toast notifications
+// ---------------------------------------------------------------------------
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(50px)';
+        toast.style.transition = 'opacity 0.3s, transform 0.3s';
+        setTimeout(() => toast.remove(), 300);
+    }, 4000);
+}
+
 // ---------------------------------------------------------------------------
 // Tab management
 // ---------------------------------------------------------------------------
@@ -45,20 +66,33 @@ function updateStatusUI(data) {
     const progressText = document.getElementById('progress-text');
 
     if (data.running) {
+        isRunning = true;
         indicator.textContent = 'Running';
         indicator.className = 'status-badge running';
         btnStart.disabled = true;
         btnStop.disabled = false;
     } else if (data.stopRequested) {
+        isRunning = false;
         indicator.textContent = 'Stopping...';
         indicator.className = 'status-badge stopped';
     } else {
-        indicator.textContent = data.summary ? 'Completed' : 'Idle';
-        indicator.className = 'status-badge idle';
+        const hasFailures = data.summary && (data.summary.failed > 0 || (data.summary.errors && data.summary.errors.length > 0));
+        indicator.textContent = data.summary ? (hasFailures ? 'Completed with errors' : 'Completed') : 'Idle';
+        if (hasFailures) {
+            indicator.className = 'status-badge running'; // yellow/orange reuse — running badge is green; use stopped for orange-red or a custom color
+            indicator.style.background = '#e67e22';
+            indicator.style.color = '#fff';
+        } else {
+            indicator.className = 'status-badge idle';
+            indicator.style.background = '';
+            indicator.style.color = '';
+        }
+        isRunning = false;
         btnStart.disabled = false;
         btnStop.disabled = true;
     }
 
+    // Update progress
     if (data.total > 0) {
         const pct = data.progressPct || 0;
         progressBar.style.width = `${pct}%`;
@@ -71,21 +105,32 @@ function updateStatusUI(data) {
     // Update log output if available
     const logOutput = document.getElementById('log-output');
     if (data.summary && data.summary.errors) {
-        data.summary.errors.forEach(err => appendLog(`Error: ${err}`));
+        data.summary.errors.forEach(err => appendLog(`Error: ${err}`, 'error'));
     }
+
+    setupPolling();
 }
 
-function appendLog(text) {
+function appendLog(text, severity = 'info') {
     const el = document.getElementById('log-output');
-    el.textContent += text + '\n';
+    const line = document.createElement('div');
+    line.className = `log-line ${severity}`;
+    line.textContent = text;
+    el.appendChild(line);
     if (autoScroll) {
         el.scrollTop = el.scrollHeight;
     }
 }
 
+let isRunning = false;
+
+function setupPolling() {
+    if (pollInterval) clearInterval(pollInterval);
+    pollInterval = setInterval(fetchStatus, isRunning ? 1000 : 5000);
+}
+
 // Start polling when page loads
-pollInterval = setInterval(fetchStatus, 2000);
-fetchStatus();
+fetchStatus().then(() => setupPolling());
 
 // ---------------------------------------------------------------------------
 // Processing controls
@@ -101,20 +146,20 @@ document.getElementById('btn-start').addEventListener('click', async () => {
             body: JSON.stringify({ rootDirectory: folderPath, maxImages }),
         });
         if (resp.ok) {
-            appendLog('Session started.');
-            document.getElementById('log-output').textContent = '';
+            document.getElementById('log-output').innerHTML = '';
+            appendLog('Session started.', 'info');
         } else {
             const err = await resp.json();
-            alert(err.detail || 'Failed to start session');
+            showToast(err.detail || 'Failed to start session', 'error');
         }
-    } catch (e) { alert('Network error: ' + e.message); }
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 });
 
 document.getElementById('btn-stop').addEventListener('click', async () => {
     try {
         const resp = await fetch(`${API_BASE}/api/stop`, { method: 'POST' });
-        if (resp.ok) appendLog('Stop requested.');
-    } catch (e) { alert('Network error: ' + e.message); }
+        if (resp.ok) appendLog('Stop requested.', 'info');
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
 });
 
 // ---------------------------------------------------------------------------
@@ -131,8 +176,18 @@ async function loadConfig() {
         document.getElementById('model-name').value = config.model?.model_name || '';
         document.getElementById('model-max-tokens').value = config.model?.max_tokens || 500;
         const tempSlider = document.getElementById('model-temperature');
-        tempSlider.value = config.model?.temperature ?? 0.1;
-        document.getElementById('temp-value').textContent = config.model?.temperature ?? 0.1;
+        const tempNum = document.getElementById('model-temp-number');
+        const tempVal = config.model?.temperature ?? 0.1;
+        tempSlider.value = tempVal;
+        document.getElementById('temp-value').textContent = tempVal;
+        tempNum.value = tempVal;
+
+        // Populate API key field (only if server returned one)
+        document.getElementById('model-api-key').value = config.model?.api_key || '';
+
+        // Populate structured outputs and max dimension
+        document.getElementById('model-use-structured').checked = config.model?.use_structured_outputs || false;
+        document.getElementById('model-max-dimension').value = config.model?.max_image_dimension || 720;
 
         // Populate extra params textarea
         const modelParams = config.model?.params || {};
@@ -159,12 +214,26 @@ function addTagCard(name = '', desc = '', threshold = 0.7) {
     const card = document.createElement('div');
     card.className = 'tag-card';
     card.innerHTML = `
-        <input type="text" class="tag-name-input" placeholder="Tag name" value="${name}">
-        <input type="text" class="tag-desc-input" placeholder="Description" value="${desc}">
+        <input type="text" class="tag-name-input" placeholder="e.g. landscape" value="${name}">
+        <input type="text" class="tag-desc-input" placeholder="What should this tag detect?" value="${desc}">
         <input type="number" class="tag-threshold-input" min="0" max="1" step="0.05" value="${threshold}" title="Threshold">
+        <button class="btn btn-secondary tag-move-btn" data-dir="up" style="padding:2px 6px; font-size:0.8rem;">↑</button>
+        <button class="btn btn-secondary tag-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger tag-remove-btn" style="padding:4px 8px;">×</button>
     `;
     card.querySelector('.tag-remove-btn').addEventListener('click', () => card.remove());
+    card.querySelectorAll('.tag-move-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const dir = btn.dataset.dir;
+            if (dir === 'up') {
+                const prev = card.previousElementSibling;
+                if (prev) container.insertBefore(card, prev);
+            } else {
+                const next = card.nextElementSibling;
+                if (next) container.insertBefore(next, card);
+            }
+        });
+    });
     container.appendChild(card);
 }
 
@@ -181,50 +250,77 @@ function addExcludeItem(pattern = '') {
     const item = document.createElement('div');
     item.className = 'exclude-item';
     item.innerHTML = `
-        <input type="text" class="exclude-input" placeholder="Regex pattern (e.g. .*receipt.*|/blurry/)" value="${pattern}">
+        <input type="text" class="exclude-input" placeholder="e.g. thumbs?_?(db|cache)?/i?" value="${pattern}">
+        <button class="btn btn-secondary exclude-move-btn" data-dir="up" style="padding:2px 6px; font-size:0.8rem;">↑</button>
+        <button class="btn btn-secondary exclude-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger exclude-remove-btn" style="padding:4px 8px;">×</button>
     `;
     item.querySelector('.exclude-remove-btn').addEventListener('click', () => item.remove());
+    item.querySelectorAll('.exclude-move-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const dir = btn.dataset.dir;
+            if (dir === 'up') {
+                const prev = item.previousElementSibling;
+                if (prev) container.insertBefore(item, prev);
+            } else {
+                const next = item.nextElementSibling;
+                if (next) container.insertBefore(next, item);
+            }
+        });
+    });
     container.appendChild(item);
 }
 
 document.getElementById('btn-add-exclude').addEventListener('click', () => addExcludeItem());
 
-// Temperature slider live update
+// Temperature slider ↔ number input sync
 document.getElementById('model-temperature').addEventListener('input', (e) => {
-    document.getElementById('temp-value').textContent = e.target.value;
+    const v = e.target.value;
+    document.getElementById('temp-value').textContent = v;
+    document.getElementById('model-temp-number').value = v;
+});
+
+document.getElementById('model-temp-number').addEventListener('input', (e) => {
+    const v = e.target.value;
+    document.getElementById('temp-value').textContent = v;
+    document.getElementById('model-temperature').value = v;
 });
 
 document.getElementById('btn-save-config').addEventListener('click', async () => {
-    const tags = {};
-    document.querySelectorAll('.tag-card').forEach(card => {
-        const name = card.querySelector('.tag-name-input').value.trim();
-        if (!name) return;
-        tags[name] = {
-            description: card.querySelector('.tag-desc-input').value,
-            threshold: parseFloat(card.querySelector('.tag-threshold-input').value) || 0.7,
-        };
-    });
-
-    const excludes = [];
-    document.querySelectorAll('.exclude-input').forEach(input => {
-        const v = input.value.trim();
-        if (v) excludes.push(v);
-    });
-
-    // Parse extra params JSON
-    const paramsText = document.getElementById('model-params').value.trim();
-    let modelParams = {};
-    if (paramsText) {
-        try {
-            modelParams = JSON.parse(paramsText);
-        } catch (e) {
-            alert('Invalid JSON in Extra Params field');
-            return;
-        }
-    }
+    const btn = document.getElementById('btn-save-config');
+    btn.disabled = true;
+    const originalText = btn.textContent;
+    btn.textContent = 'Saving...';
 
     try {
+        const tags = {};
+        document.querySelectorAll('.tag-card').forEach(card => {
+            const name = card.querySelector('.tag-name-input').value.trim();
+            if (!name) return;
+            tags[name] = {
+                description: card.querySelector('.tag-desc-input').value,
+                threshold: parseFloat(card.querySelector('.tag-threshold-input').value) || 0.7,
+            };
+        });
+
+        const excludes = [];
+        document.querySelectorAll('.exclude-input').forEach(input => {
+            const v = input.value.trim();
+            if (v) excludes.push(v);
+        });
+
+        // Parse extra params JSON
+        const paramsText = document.getElementById('model-params').value.trim();
+        let modelParams = {};
+        if (paramsText) {
+            try {
+                modelParams = JSON.parse(paramsText);
+            } catch (e) {
+                showToast('Invalid JSON in Extra Params field', 'error');
+                return;
+            }
+        }
+
         const resp = await fetch(`${API_BASE}/api/config`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -235,6 +331,9 @@ document.getElementById('btn-save-config').addEventListener('click', async () =>
                     model_name: document.getElementById('model-name').value.trim(),
                     max_tokens: parseInt(document.getElementById('model-max-tokens').value) || 500,
                     temperature: parseFloat(document.getElementById('model-temperature').value) || 0.1,
+                    api_key: document.getElementById('model-api-key').value.trim() || null,
+                    use_structured_outputs: document.getElementById('model-use-structured').checked,
+                    max_image_dimension: parseInt(document.getElementById('model-max-dimension').value) || 720,
                     params: modelParams,
                 },
                 tags,
@@ -242,12 +341,61 @@ document.getElementById('btn-save-config').addEventListener('click', async () =>
             }),
         });
         if (resp.ok) {
-            alert('Configuration saved successfully.');
+            showToast('Configuration saved successfully.', 'success');
         } else {
             const err = await resp.json();
-            alert('Failed to save config: ' + (err.detail || 'Unknown error'));
+            showToast('Failed to save config: ' + (err.detail || 'Unknown error'), 'error');
         }
-    } catch (e) { alert('Network error: ' + e.message); }
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+    finally {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+});
+
+// Export config as JSON download
+document.getElementById('btn-export-config').addEventListener('click', async () => {
+    try {
+        const resp = await fetch(`${API_BASE}/api/config`);
+        if (!resp.ok) { showToast('Failed to export config', 'error'); return; }
+        const config = await resp.json();
+        const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'exif-tagger-config.json';
+        a.click();
+        URL.revokeObjectURL(url);
+    } catch (e) { showToast('Export failed: ' + e.message, 'error'); }
+});
+
+// Import config from JSON file
+document.getElementById('import-config-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+        const text = await file.text();
+        const config = JSON.parse(text);
+        document.getElementById('config-root').value = config.root_directory || '';
+        document.getElementById('model-base-url').value = config.model?.base_url || '';
+        document.getElementById('model-name').value = config.model?.model_name || '';
+        document.getElementById('model-max-tokens').value = config.model?.max_tokens || 500;
+        const tempSlider = document.getElementById('model-temperature');
+        const tempNum = document.getElementById('model-temp-number');
+        const tempVal = config.model?.temperature ?? 0.1;
+        tempSlider.value = tempVal;
+        document.getElementById('temp-value').textContent = tempVal;
+        tempNum.value = tempVal;
+        document.getElementById('model-use-structured').checked = config.model?.use_structured_outputs || false;
+        document.getElementById('model-max-dimension').value = config.model?.max_image_dimension || 720;
+        const modelParams = config.model?.params || {};
+        document.getElementById('model-params').value = JSON.stringify(modelParams, null, 2);
+        renderTags(config.tags || {});
+        renderExcludes(config.exclude_patterns || []);
+        showToast('Config imported — click Save to apply', 'success');
+    } catch (err) { showToast('Failed to import config: ' + err.message, 'error'); }
+    // Reset input so the same file can be re-imported
+    e.target.value = '';
 });
 
 // ---------------------------------------------------------------------------
@@ -291,7 +439,7 @@ function renderSchedules(schedules) {
             try {
                 const resp = await fetch(`${API_BASE}/api/schedule/${btn.dataset.id}`, { method: 'DELETE' });
                 if (resp.ok) loadSchedules();
-            } catch (e) { alert('Network error'); }
+            } catch (e) { showToast('Network error', 'error'); }
         });
     });
 }
@@ -321,7 +469,7 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
     const folder = document.getElementById('schedule-folder').value.trim();
     const type = document.getElementById('schedule-type').value;
 
-    if (!name || !folder) { alert('Name and folder are required'); return; }
+    if (!name || !folder) { showToast('Name and folder are required', 'error'); return; }
 
     const body = { name, folder };
     if (type === 'interval') {
@@ -337,13 +485,44 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
             body: JSON.stringify(body),
         });
         if (resp.ok) {
-            alert('Schedule added.');
+            showToast('Schedule added.', 'success');
+            document.getElementById('schedule-name').value = '';
+            document.getElementById('schedule-folder').value = '';
+            document.getElementById('schedule-type').value = 'interval';
+            document.getElementById('schedule-interval').value = '6';
+            document.getElementById('schedule-cron').value = '';
+            document.getElementById('interval-input-group').style.display = '';
+            document.getElementById('cron-input-group').style.display = 'none';
             loadSchedules();
         } else {
             const err = await resp.json();
-            alert('Failed to add schedule: ' + (err.detail || 'Unknown error'));
+            showToast('Failed to add schedule: ' + (err.detail || 'Unknown error'), 'error');
         }
-    } catch (e) { alert('Network error: ' + e.message); }
+    } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+    // Ctrl+Enter to start processing
+    if (e.ctrlKey && e.key === 'Enter') {
+        e.preventDefault();
+        const btnStart = document.getElementById('btn-start');
+        if (!btnStart.disabled) btnStart.click();
+    }
+    // Escape to stop
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        const btnStop = document.getElementById('btn-stop');
+        if (!btnStop.disabled) btnStop.click();
+    }
+    // Number keys for tabs
+    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+        const tabBtns = document.querySelectorAll('.tab-btn');
+        const num = parseInt(e.key);
+        if (num >= 1 && num <= 3 && tabBtns[num - 1]) {
+            tabBtns[num - 1].click();
+        }
+    }
 });
 
 // Load config on first tab activation

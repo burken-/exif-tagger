@@ -35,6 +35,10 @@ class ModelConfig(BaseModel):
     )
     max_tokens: int = Field(default=500, ge=100, le=4096)
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+    use_structured_outputs: bool = Field(
+        default=False,
+        description="When True, uses OpenAI response_format with JSON Schema for guaranteed valid structured output.",
+    )
     params: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional parameters passed directly to the vision API call. "

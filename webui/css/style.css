@@ -32,7 +32,7 @@ header h1 { font-size: 1.5rem; color: #fff; }
     font-weight: 600;
 }
 
-.status-badge.idle { background: #555; color: #ccc; }
+.status-badge.idle { background: #4a4a5a; color: #e8e8f0; }
 .status-badge.running { background: #2ecc71; color: #fff; }
 .status-badge.stopped { background: #e74c3c; color: #fff; }
 
@@ -49,7 +49,11 @@ header h1 { font-size: 1.5rem; color: #fff; }
     font-size: 0.9rem;
 }
 
-.tab-btn.active { background: #0f3460; color: #fff; }
+.tab-btn.active {
+    background: #1a3a6e;
+    color: #fff;
+    border-left: 3px solid #3b82f6;
+}
 .tab-btn:hover:not(.active) { background: #1a1a3e; }
 
 .tab-content { display: none; }
@@ -57,10 +61,12 @@ header h1 { font-size: 1.5rem; color: #fff; }
 
 /* Cards */
 .card {
-    background: #16213e;
+    background: #1c2744;
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 1px solid #2a3555;
 }
 
 .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: #fff; }
@@ -78,16 +84,24 @@ header h1 { font-size: 1.5rem; color: #fff; }
 .form-group input, .form-group select {
     width: 100%;
     padding: 8px 12px;
-    background: #1a1a2e;
-    border: 1px solid #333;
+    background: #1f2940;
+    border: 1px solid #44506a;
     border-radius: 4px;
     color: #e0e0e0;
     font-size: 0.9rem;
 }
 
+.field-helper {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: #777;
+}
+
 .form-group input:focus, .form-group select:focus {
     outline: none;
-    border-color: #0f3460;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.3);
 }
 
 .form-row { display: flex; gap: 16px; }
@@ -115,6 +129,11 @@ fieldset legend {
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.9rem;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.btn:hover:not(:disabled) {
+    transform: translateY(-1px);
 }
 
 .btn-primary { background: #0f3460; color: #fff; }
@@ -154,8 +173,12 @@ fieldset legend {
     font-family: 'Courier New', monospace;
     font-size: 0.8rem;
     line-height: 1.5;
-    color: #7ee787;
 }
+
+.log-line { margin-bottom: 2px; }
+.log-line.error { color: #f87171; }
+.log-line.warning { color: #fb923c; }
+.log-line.info, .log-line.success { color: #7ee787; }
 
 .log-header {
     display: flex;
@@ -213,11 +236,43 @@ th { color: #888; font-weight: 600; }
 .preset-buttons button { padding: 6px 12px; background: #1a1a2e; border: 1px solid #333; color: #ccc; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
 .preset-buttons button:hover { background: #0f3460; color: #fff; }
 
+/* Toast notifications */
+#toast-container { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+.toast { padding: 12px 20px; margin-bottom: 8px; border-radius: 6px; color: #fff; font-size: 0.9rem; animation: fadeIn 0.3s ease; min-width: 250px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+.toast.success { background: #2ecc71; }
+.toast.error { background: #e74c3c; }
+.toast.info { background: #3498db; }
+@keyframes fadeIn { from { opacity: 0; transform: translateX(50px); } to { opacity: 1; transform: translateX(0); } }
+
 /* Temperature display */
-#temp-value { display: inline-block; margin-left: 8px; color: #2ecc71; font-weight: bold; }
+#temp-value { display: inline-block; margin-left: 8px; color: #f59e0b; font-weight: bold; }
+.temp-number-input { width:70px !important; flex:none !important; }
+
+/* Tag header labels */
+.tag-header { display:flex; gap:8px; margin-bottom:6px; font-size:0.75rem; color:#888; }
+
+/* Field helper text */
+.field-helper { font-size:0.75rem; color:#888; margin-top:6px; }
+
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.status-badge.stopped { animation: pulse 1s ease-in-out infinite; }
 
 /* Responsive */
 @media (max-width: 600px) {
     .form-row { flex-direction: column; gap: 0; }
     .button-row { flex-direction: column; }
+
+    /* Make schedules table horizontally scrollable */
+    #schedules-table { display: block; overflow-x: auto; width: 100%; }
+
+    /* Stack tag cards vertically on mobile */
+    .tag-card { flex-wrap: wrap; }
+    .tag-card input[type="number"] { width: 60px !important; }
+
+    /* Reduce container padding */
+    .container { padding: 12px; }
+
+    /* Tabs scroll horizontally if needed */
+    .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tab-btn { white-space: nowrap; flex-shrink: 0; }
 }
