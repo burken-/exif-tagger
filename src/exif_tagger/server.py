@@ -298,7 +298,7 @@ def api_update_config(updates: dict[str, Any]):
             tag_defs = {}
             for name, tdata in updates["tags"].items():
                 td = TagDefinition(**tdata)
-                tag_defs[name] = td
+                tag_defs[name] = td.model_dump()
             current["tags"] = tag_defs
 
         if "exclude_patterns" in updates:
