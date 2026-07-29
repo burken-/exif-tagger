@@ -86,8 +86,9 @@
                         </div>
                         <div class="form-group">
                             <label for="model-temperature">Temperature (0.0–2.0)</label>
-                            <input type="range" id="model-temperature" min="0" max="2" step="0.1" value="0.1">
+                            <input type="range" id="model-temperature" min="0" max="2" step="0.05" value="0.1">
                             <span id="temp-value">0.1</span>
+                            <input type="number" id="model-temp-number" class="temp-number-input" min="0" max="2" step="0.05" value="0.1" style="width:70px; margin-left:8px;">
                         </div>
                     </div>
                     <div class="form-group">
@@ -112,6 +113,12 @@
 
                 <fieldset>
                     <legend>Tags</legend>
+                    <div class="tag-header" style="display:flex; gap:8px; margin-bottom:6px; font-size:0.75rem; color:#888;">
+                        <span style="flex:2;">Tag Name</span>
+                        <span style="flex:3;">Description</span>
+                        <span style="width:70px; text-align:center;">Threshold</span>
+                        <span style="width:30px;"></span>
+                    </div>
                     <div id="tags-container"></div>
                     <button id="btn-add-tag" class="btn btn-secondary">+ Add Tag</button>
                 </fieldset>
@@ -122,6 +129,7 @@
                     <button id="btn-add-exclude" class="btn btn-secondary">+ Add Pattern</button>
                 </fieldset>
 
+                <p class="field-helper" style="font-size:0.75rem; color:#888; margin-top:6px;">Higher threshold = AI must be more confident before applying this tag (0.0–1.0)</p>
                 <button id="btn-save-config" class="btn btn-primary">Save Configuration</button>
             </div>
         </section>

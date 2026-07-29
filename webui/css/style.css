@@ -246,6 +246,13 @@ th { color: #888; font-weight: 600; }
 
 /* Temperature display */
 #temp-value { display: inline-block; margin-left: 8px; color: #f59e0b; font-weight: bold; }
+.temp-number-input { width:70px !important; flex:none !important; }
+
+/* Tag header labels */
+.tag-header { display:flex; gap:8px; margin-bottom:6px; font-size:0.75rem; color:#888; }
+
+/* Field helper text */
+.field-helper { font-size:0.75rem; color:#888; margin-top:6px; }
 
 /* Responsive */
 @media (max-width: 600px) {

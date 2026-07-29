@@ -160,8 +160,11 @@ async function loadConfig() {
         document.getElementById('model-name').value = config.model?.model_name || '';
         document.getElementById('model-max-tokens').value = config.model?.max_tokens || 500;
         const tempSlider = document.getElementById('model-temperature');
-        tempSlider.value = config.model?.temperature ?? 0.1;
-        document.getElementById('temp-value').textContent = config.model?.temperature ?? 0.1;
+        const tempNum = document.getElementById('model-temp-number');
+        const tempVal = config.model?.temperature ?? 0.1;
+        tempSlider.value = tempVal;
+        document.getElementById('temp-value').textContent = tempVal;
+        tempNum.value = tempVal;
 
         // Populate API key field (only if server returned one)
         document.getElementById('model-api-key').value = config.model?.api_key || '';
@@ -195,12 +198,26 @@ function addTagCard(name = '', desc = '', threshold = 0.7) {
     const card = document.createElement('div');
     card.className = 'tag-card';
     card.innerHTML = `
-        <input type="text" class="tag-name-input" placeholder="Tag name" value="${name}">
-        <input type="text" class="tag-desc-input" placeholder="Description" value="${desc}">
+        <input type="text" class="tag-name-input" placeholder="e.g. landscape" value="${name}">
+        <input type="text" class="tag-desc-input" placeholder="What should this tag detect?" value="${desc}">
         <input type="number" class="tag-threshold-input" min="0" max="1" step="0.05" value="${threshold}" title="Threshold">
+        <button class="btn btn-secondary tag-move-btn" data-dir="up" style="padding:2px 6px; font-size:0.8rem;">↑</button>
+        <button class="btn btn-secondary tag-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger tag-remove-btn" style="padding:4px 8px;">×</button>
     `;
     card.querySelector('.tag-remove-btn').addEventListener('click', () => card.remove());
+    card.querySelectorAll('.tag-move-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const dir = btn.dataset.dir;
+            if (dir === 'up') {
+                const prev = card.previousElementSibling;
+                if (prev) container.insertBefore(card, prev);
+            } else {
+                const next = card.nextElementSibling;
+                if (next) container.insertBefore(next, card);
+            }
+        });
+    });
     container.appendChild(card);
 }
 
@@ -217,18 +234,40 @@ function addExcludeItem(pattern = '') {
     const item = document.createElement('div');
     item.className = 'exclude-item';
     item.innerHTML = `
-        <input type="text" class="exclude-input" placeholder="Regex pattern (e.g. .*receipt.*|/blurry/)" value="${pattern}">
+        <input type="text" class="exclude-input" placeholder="e.g. thumbs?_?(db|cache)?/i?" value="${pattern}">
+        <button class="btn btn-secondary exclude-move-btn" data-dir="up" style="padding:2px 6px; font-size:0.8rem;">↑</button>
+        <button class="btn btn-secondary exclude-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger exclude-remove-btn" style="padding:4px 8px;">×</button>
     `;
     item.querySelector('.exclude-remove-btn').addEventListener('click', () => item.remove());
+    item.querySelectorAll('.exclude-move-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const dir = btn.dataset.dir;
+            if (dir === 'up') {
+                const prev = item.previousElementSibling;
+                if (prev) container.insertBefore(item, prev);
+            } else {
+                const next = item.nextElementSibling;
+                if (next) container.insertBefore(next, item);
+            }
+        });
+    });
     container.appendChild(item);
 }
 
 document.getElementById('btn-add-exclude').addEventListener('click', () => addExcludeItem());
 
-// Temperature slider live update
+// Temperature slider ↔ number input sync
 document.getElementById('model-temperature').addEventListener('input', (e) => {
-    document.getElementById('temp-value').textContent = e.target.value;
+    const v = e.target.value;
+    document.getElementById('temp-value').textContent = v;
+    document.getElementById('model-temp-number').value = v;
+});
+
+document.getElementById('model-temp-number').addEventListener('input', (e) => {
+    const v = e.target.value;
+    document.getElementById('temp-value').textContent = v;
+    document.getElementById('model-temperature').value = v;
 });
 
 document.getElementById('btn-save-config').addEventListener('click', async () => {
@@ -386,6 +425,13 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
         });
         if (resp.ok) {
             showToast('Schedule added.', 'success');
+            document.getElementById('schedule-name').value = '';
+            document.getElementById('schedule-folder').value = '';
+            document.getElementById('schedule-type').value = 'interval';
+            document.getElementById('schedule-interval').value = '6';
+            document.getElementById('schedule-cron').value = '';
+            document.getElementById('interval-input-group').style.display = '';
+            document.getElementById('cron-input-group').style.display = 'none';
             loadSchedules();
         } else {
             const err = await resp.json();
