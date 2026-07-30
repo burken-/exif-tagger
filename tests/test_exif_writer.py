@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from exif_tagger.exif_writer import (
-    _parse_existing_tags,
     get_existing_xptags,
     tag_image_exif,
     write_xptags,
@@ -29,25 +28,6 @@ def _make_jpeg_with_exif(tmp_path: Path, xptags: str | None = None) -> Path:
         else:
             pil_img.save(str(img_path), format="JPEG")
     return img_path
-
-
-class TestParseExistingTags:
-    """Test parsing of semicolon-separated XPTags."""
-
-    def test_empty_string(self):
-        assert _parse_existing_tags("") == set()
-
-    def test_single_tag(self):
-        result = _parse_existing_tags("landscape")
-        assert result == {"landscape"}
-
-    def test_multiple_tags_semicolon(self):
-        result = _parse_existing_tags("landscape;portrait;architecture")
-        assert result == {"landscape", "portrait", "architecture"}
-
-    def test_whitespace_handling(self):
-        result = _parse_existing_tags("  landscape ; portrait ; architecture ")
-        assert result == {"landscape", "portrait", "architecture"}
 
 
 class TestGetExistingXptags:

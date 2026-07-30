@@ -176,23 +176,6 @@ class CheckpointData(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Summary statistics (reported after run completes)
-# ---------------------------------------------------------------------------
-class RunSummary(BaseModel):
-    """Statistics for a completed or interrupted run."""
-
-    root_directory: str
-    total_images_found: int
-    total_processed: int
-    successfully_tagged: int
-    already_tagged: int  # had tags from before, unchanged
-    skipped_by_checkpoint: int
-    failed: int
-    failed_apis: list[str] = Field(default_factory=list)
-    errors: list[str] = Field(default_factory=list)
-
-
-# ---------------------------------------------------------------------------
 # Schedule configuration (persisted to schedules.json)
 # ---------------------------------------------------------------------------
 class ScheduleModel(BaseModel):
@@ -226,8 +209,3 @@ class ScheduleModel(BaseModel):
 
     model_config = ConfigDict(extra='allow')
 
-
-class ScheduleEntry(ScheduleModel):
-    """ScheduleModel with next_run_at computed."""
-
-    next_run_at: str | None = Field(default=None, description="ISO timestamp of next scheduled run")
