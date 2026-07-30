@@ -94,17 +94,22 @@
                             <label for="model-temperature">Temperature (0.0–2.0)</label>
                             <input type="range" id="model-temperature" min="0" max="2" step="0.05" value="0.1">
                             <span id="temp-value">0.1</span>
-                            <input type="number" id="model-temp-number" class="temp-number-input" min="0" max="2" step="0.05" value="0.1" style="width:70px; margin-left:8px;">
                         </div>
                     </div>
                     <div class="form-group">
                         <label for="model-api-key">API Key</label>
-                        <input type="password" id="model-api-key" placeholder="sk-... (optional)">
+                        <div class="input-with-button">
+                            <input type="password" id="model-api-key" placeholder="sk-... (optional)">
+                            <button id="btn-toggle-api-key" type="button" class="btn btn-secondary">👁️</button>
+                        </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="model-use-structured">Use Structured Outputs</label>
-                            <input type="checkbox" id="model-use-structured" style="width:auto;margin-top:6px;">
+                            <label class="switch">
+                                <input type="checkbox" id="model-use-structured">
+                                <span class="slider round"></span>
+                            </label>
                         </div>
                         <div class="form-group">
                             <label for="model-max-dimension">Max Image Dimension</label>

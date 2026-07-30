@@ -116,51 +116,21 @@ def _compute_next_run(schedule: ScheduleModel) -> str | None:
         parts = schedule.cron_expression.strip().split()
         if len(parts) == 5:
             minute, hour, dom, month, dow = parts
-            return _parse_cron_to_iso(now, minute, hour, dom, month, dow)
+            try:
+                from apscheduler.triggers.cron import CronTrigger
+                trigger = CronTrigger(
+                    minute=minute, hour=hour, day=dom, month=month, day_of_week=dow, timezone=UTC
+                )
+                next_fire = trigger.get_next_fire_time(None, now)
+                return next_fire.isoformat() if next_fire else None
+            except Exception:
+                return None
     elif schedule.interval_hours:
-        next_run = now.replace(microsecond=0)
         from datetime import timedelta
-        next_run += timedelta(hours=schedule.interval_hours)
+        next_run = now.replace(microsecond=0) + timedelta(hours=schedule.interval_hours)
         return next_run.isoformat()
     return None
 
-
-def _parse_cron_to_iso(
-    now: datetime, minute: str, hour: str, dom: str, month: str, dow: str
-) -> str | None:
-    """Parse a simple cron expression to the next ISO run time.
-
-    Handles basic patterns like '0 2 * * *' (daily at 2am).
-    Does not handle complex expressions with ranges/lists in one pass.
-    """
-    from datetime import timedelta
-
-    def _parse_field(val: str, min_val: int, max_val: int) -> list[int]:
-        if val == "*":
-            return list(range(min_val, max_val + 1))
-        try:
-            return [int(val)]
-        except ValueError:
-            return list(range(min_val, max_val + 1))
-
-    minutes = _parse_field(minute, 0, 59)
-    hours = _parse_field(hour, 0, 23)
-    doms = _parse_field(dom, 1, 31) if dom != "*" else None
-    months = _parse_field(month, 1, 12)
-    dows = _parse_field(dow, 0, 6)
-
-    candidate = now.replace(microsecond=0, second=0, minute=now.minute + 1) if now.second == 0 else now.replace(microsecond=0, second=0)
-
-    for _ in range(7 * 24 * 60):  # Check up to 7 days of minutes
-        candidate += timedelta(minutes=1)
-        if (candidate.minute in minutes and
-            candidate.hour in hours and
-            candidate.month in months and
-            (doms is None or candidate.day in doms) and
-            (candidate.weekday() % 7) in dows):
-            return candidate.isoformat()
-
-    return now.replace(microsecond=0).isoformat()
 
 
 def _run_schedule_job(schedule_id: str) -> None:
@@ -422,6 +392,16 @@ def api_delete_schedule(schedule_id: str):
     _setup_scheduler()
 
     return {"status": "deleted"}
+
+
+@app.post("/api/schedule/{schedule_id}/run")
+def api_run_schedule(schedule_id: str):
+    if schedule_id not in _schedules:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    thread = threading.Thread(target=_run_schedule_job, args=[schedule_id], daemon=True)
+    thread.start()
+    return {"status": "started"}
+
 
 
 # ---------------------------------------------------------------------------
