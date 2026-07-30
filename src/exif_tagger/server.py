@@ -42,6 +42,31 @@ SCHEDULES_FILE = (
     Path(_schedules_env) if _schedules_env else _config_dir / "schedules.json"
 )
 
+# Setup server-log folder for debugging server errors
+SERVER_LOG_DIR = _config_dir / "server-log"
+SERVER_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+from exif_tagger.ai_client import SecretRedactor
+
+_log_formatter = logging.Formatter(
+    '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+_error_file_handler = logging.FileHandler(SERVER_LOG_DIR / "error.log")
+_error_file_handler.setLevel(logging.ERROR)
+_error_file_handler.setFormatter(_log_formatter)
+_error_file_handler.addFilter(SecretRedactor())
+
+_server_file_handler = logging.FileHandler(SERVER_LOG_DIR / "server.log")
+_server_file_handler.setLevel(logging.INFO)
+_server_file_handler.setFormatter(_log_formatter)
+_server_file_handler.addFilter(SecretRedactor())
+
+_root_logger = logging.getLogger()
+_root_logger.addHandler(_error_file_handler)
+_root_logger.addHandler(_server_file_handler)
+
 
 class StartRequest(BaseModel):
     rootDirectory: str | None = None
@@ -61,7 +86,7 @@ def _get_engine() -> PipelineEngine:
     """Get or create the pipeline engine instance."""
     global _engine
     if _engine is None:
-        _engine = PipelineEngine(config_path=CONFIG_PATH, verbose=False)
+        _engine = PipelineEngine(config_path=CONFIG_PATH, verbose=True)
     return _engine
 
 
@@ -209,6 +234,19 @@ def _setup_scheduler() -> None:
                 logger.warning("Failed to add job for schedule '%s': %s", sid, e)
 
 
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception processing request %s %s: %s", request.method, request.url, exc, exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {exc}"},
+    )
+
+
 @app.get("/api/status")
 def api_status():
     engine = _get_engine()
@@ -228,7 +266,7 @@ def api_start(req: StartRequest):
         if _engine and _engine.state.running:
             raise HTTPException(status_code=409, detail="A processing session is already running")
 
-        _engine = PipelineEngine(config_path=CONFIG_PATH, verbose=False)
+        _engine = PipelineEngine(config_path=CONFIG_PATH, verbose=True)
 
     def run_session():
         _get_engine().start_session(

@@ -128,6 +128,21 @@ class TestProcessingState:
         state = ProcessingState()
         assert state.summary is None
 
+    def test_add_log_and_get_logs(self):
+        from exif_tagger.main import ProcessingState
+
+        state = ProcessingState()
+        state.add_log("Message 1", "info")
+        state.add_log("Message 2", "error")
+        logs = state.get_logs()
+        assert len(logs) == 2
+        assert logs[0]["id"] == 1
+        assert logs[0]["text"] == "Message 1"
+        assert logs[0]["level"] == "info"
+        assert logs[1]["id"] == 2
+        assert logs[1]["text"] == "Message 2"
+        assert logs[1]["level"] == "error"
+
 
 class TestProcessingStateThreadSafety:
     """Concurrent access tests for ProcessingState — separate class to avoid fixture pollution."""

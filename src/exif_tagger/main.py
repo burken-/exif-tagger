@@ -87,17 +87,40 @@ def _format_summary_text(summary: dict) -> str:
     return "\n".join(lines)
 
 
+class StateLoggingHandler(logging.Handler):
+    """Logging handler that routes logs to ProcessingState."""
+
+    def __init__(self, state: ProcessingState):
+        super().__init__()
+        self.state = state
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            msg = self.format(record)
+            level = record.levelname.lower()
+            if level in ("error", "critical"):
+                level = "error"
+            elif level == "warning":
+                level = "warning"
+            else:
+                level = "info"
+            self.state.add_log(msg, level)
+        except Exception:
+            self.handleError(record)
+
+
 class ProcessingState:
     """Thread-safe state tracker for a running processing session."""
 
     def __init__(self):
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._running = False
         self._processed = 0
         self._total = 0
         self._current_image: str | None = None
         self._stop_requested = False
-        self._log_lines: list[str] = []
+        self._log_entries: list[dict[str, Any]] = []
+        self._log_counter = 0
         self._summary: dict | None = None
 
     @property
@@ -130,10 +153,25 @@ class ProcessingState:
         with self._lock:
             return self._summary
 
+    def add_log(self, text: str, level: str = "info") -> None:
+        with self._lock:
+            self._log_counter += 1
+            self._log_entries.append({
+                "id": self._log_counter,
+                "text": text,
+                "level": level,
+            })
+            if len(self._log_entries) > 500:
+                self._log_entries = self._log_entries[-500:]
+
+    def get_logs(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return list(self._log_entries)
+
     @property
     def log_lines(self) -> list[str]:
         with self._lock:
-            return list(self._log_lines[-200:])  # Keep last 200 lines
+            return [e["text"] for e in self._log_entries[-200:]]
 
     def start(self, total_images: int) -> None:
         with self._lock:
@@ -142,14 +180,15 @@ class ProcessingState:
             self._total = total_images
             self._current_image = None
             self._stop_requested = False
-            self._log_lines = []
+            self._log_entries = []
+            self._log_counter = 0
             self._summary = None
 
     def update_progress(self, image_name: str) -> None:
         with self._lock:
             self._processed += 1
             self._current_image = image_name
-            self._log_lines.append(f"[{self._processed}/{self._total}] Processed: {image_name}")
+            self.add_log(f"[{self._processed}/{self._total}] Processed: {image_name}", "info")
 
     def set_stop_requested(self) -> None:
         with self._lock:
@@ -177,11 +216,13 @@ class PipelineEngine:
         self.state = ProcessingState()
         self._config = None
 
-    def _load_config(self):
+    def _load_config(self, root_directory_override: str | None = None):
         from exif_tagger.config import load_config
         from exif_tagger.models.schema import Config
 
         self._config: Config = load_config(self.config_path)
+        if root_directory_override:
+            self._config.root_directory = root_directory_override
         self._config.validate()
         self._config.validate_exclude_patterns()
         return self._config
@@ -202,14 +243,19 @@ class PipelineEngine:
         setup_secure_logging(log_level)
         logger = logging.getLogger("exif_tagger")
 
-        try:
-            config = self._load_config()
+        state_handler = StateLoggingHandler(self.state)
+        state_handler.setLevel(log_level)
+        logger.addHandler(state_handler)
 
-            if root_directory:
-                config.root_directory = root_directory
+        try:
+            config = self._load_config(root_directory_override=root_directory)
 
             if not config.tags:
-                return {"error": "No tags configured", "exit_code": 1}
+                err_msg = "No tags configured"
+                self.state.add_log(err_msg, "error")
+                summary = {"error": err_msg, "exit_code": 1}
+                self.state.finish(summary)
+                return summary
 
             _log_tag_list(config.tags)
 
@@ -221,7 +267,7 @@ class PipelineEngine:
             total_found = len(all_images)
             if total_found == 0:
                 logger.warning("No images found in %s. Nothing to do.", config.root_directory)
-                return {
+                summary = {
                     "root_directory": config.root_directory,
                     "total_images_found": 0,
                     "total_processed": 0,
@@ -231,6 +277,9 @@ class PipelineEngine:
                     "failed": 0,
                     "errors": [],
                 }
+                self.state.start(0)
+                self.state.finish(summary)
+                return summary
 
             checkpoint: dict[str, ImageCheckpoint] = {}
             skipped_by_checkpoint = 0
@@ -260,7 +309,7 @@ class PipelineEngine:
             )
 
             if not images_to_process:
-                return {
+                summary = {
                     "root_directory": config.root_directory,
                     "total_images_found": total_found,
                     "total_processed": 0,
@@ -270,6 +319,9 @@ class PipelineEngine:
                     "failed": 0,
                     "errors": [],
                 }
+                self.state.start(total_found)
+                self.state.finish(summary)
+                return summary
 
             self.state.start(len(images_to_process))
 
@@ -356,7 +408,9 @@ class PipelineEngine:
 
         except Exception as exc:
             logger.error("Fatal error: %s", exc, exc_info=True)
-            self.state.finish({
+            err_msg = f"Fatal error: {exc}"
+            self.state.add_log(err_msg, "error")
+            summary = {
                 "root_directory": getattr(self._config, 'root_directory', ''),
                 "total_images_found": 0,
                 "total_processed": 0,
@@ -364,9 +418,14 @@ class PipelineEngine:
                 "already_tagged": 0,
                 "skipped_by_checkpoint": 0,
                 "failed": 1,
-                "errors": [f"Fatal: {exc}"],
-            })
+                "errors": [err_msg],
+            }
+            if not self.state.running:
+                self.state.start(0)
+            self.state.finish(summary)
             return {"error": str(exc), "exit_code": 1}
+        finally:
+            logger.removeHandler(state_handler)
 
     def stop(self) -> dict:
         """Request graceful stop of current session."""
@@ -388,6 +447,7 @@ class PipelineEngine:
             "currentImage": s.current_image,
             "progressPct": s.progress_pct,
             "stopRequested": s.stop_requested,
+            "logs": s.get_logs(),
         }
 
     def get_summary(self) -> dict | None:

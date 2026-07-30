@@ -4,6 +4,7 @@ const API_BASE = '';
 let pollInterval = null;
 let currentSessionId = null;
 let autoScroll = true;
+let lastProcessedLogId = 0;
 
 document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => {
     autoScroll = e.target.checked;
@@ -11,6 +12,7 @@ document.getElementById('auto-scroll-toggle').addEventListener('change', (e) => 
 
 document.getElementById('btn-clear-log').addEventListener('click', () => {
     document.getElementById('log-output').innerHTML = '';
+    lastProcessedLogId = 0;
 });
 
 // ---------------------------------------------------------------------------
@@ -102,10 +104,14 @@ function updateStatusUI(data) {
         progressText.textContent = '0 / 0 images processed (0%)';
     }
 
-    // Update log output if available
-    const logOutput = document.getElementById('log-output');
-    if (data.summary && data.summary.errors) {
-        data.summary.errors.forEach(err => appendLog(`Error: ${err}`, 'error'));
+    // Update log output continuously without duplicate repetition
+    if (data.logs && Array.isArray(data.logs)) {
+        data.logs.forEach(log => {
+            if (log.id > lastProcessedLogId) {
+                appendLog(log.text, log.level || 'info');
+                lastProcessedLogId = log.id;
+            }
+        });
     }
 
     setupPolling();
@@ -147,6 +153,7 @@ document.getElementById('btn-start').addEventListener('click', async () => {
         });
         if (resp.ok) {
             document.getElementById('log-output').innerHTML = '';
+            lastProcessedLogId = 0;
             appendLog('Session started.', 'info');
         } else {
             const err = await resp.json();

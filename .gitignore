@@ -46,6 +46,7 @@ htmlcov/
 
 # Exif-tagger runtime
 .exif-tagger-checkpoint.json
+server-log/
 
 # Test images
 testimages/

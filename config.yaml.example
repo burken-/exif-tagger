@@ -17,6 +17,11 @@ model:
   #   top_p: 0.95                             # Nucleus sampling parameter
   #   response_format: {"type": "json_object"}# Force JSON-structured output
 
+# Maximum image dimension (width or height) before resizing.
+# Images larger than this will be proportionally scaled down using LANCZOS resampling.
+# Range: 100–4096, default: 720. Can also be set via env var EXIFTAGGER_MAX_IMAGE_DIMENSION.
+max_image_dimension: 720
+
 # Tag definitions – each tag has a description and threshold (0-1)
 # Images scoring >= threshold will have the tag written to XPTags.
 tags:
