@@ -174,6 +174,10 @@ async function loadConfig() {
         const config = await resp.json();
 
         document.getElementById('config-root').value = config.root_directory || '';
+        const folderPathEl = document.getElementById('folder-path');
+        if (folderPathEl) {
+            folderPathEl.placeholder = config.root_directory ? `Default: ${config.root_directory}` : '/data/images/this-month';
+        }
         document.getElementById('model-base-url').value = config.model?.base_url || '';
         document.getElementById('model-name').value = config.model?.model_name || '';
         document.getElementById('model-max-tokens').value = config.model?.max_tokens || 500;
