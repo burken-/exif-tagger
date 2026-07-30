@@ -10,6 +10,8 @@ have built-in support for XMP/XPTags metadata.
 from __future__ import annotations
 
 import logging
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -174,21 +176,46 @@ def write_xptags(
     merged = existing | {t.lower() for t in truly_new}
     tags_str = ";".join(sorted(merged))
 
+    backup_path = validated_path.with_suffix(validated_path.suffix + ".exif-tagger-backup")
+
     try:
-        # SECURITY: subprocess with list args and explicit shell=False
-        result = subprocess.run(
-            ["exiftool", f"-XPTags={tags_str}", str(validated_path)],
-            capture_output=True, 
-            text=True, 
-            timeout=EXIFTOOL_TIMEOUT,
-            check=False,
-            shell=False,  # Explicitly disabled for security
-        )
-        
-        if result.returncode != 0:
-            raise RuntimeError(
-                f"Failed to write XPTags to {validated_path}: exiftool error – {result.stderr}"
+        # Step 1: Create a backup before modifying the original file
+        shutil.copy2(str(validated_path), str(backup_path))
+
+        # Step 2: Write XPTags via exiftool (modifies in-place)
+        try:
+            result = subprocess.run(
+                ["exiftool", f"-XPTags={tags_str}", str(validated_path)],
+                capture_output=True, 
+                text=True, 
+                timeout=EXIFTOOL_TIMEOUT,
+                check=False,
+                shell=False,  # Explicitly disabled for security
             )
+
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Failed to write XPTags to {validated_path}: exiftool error – {result.stderr}"
+                )
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to write XPTags to {validated_path}: exiftool execution error – {exc}"
+            ) from exc
+
+        # Step 3: Verify the image is still readable after modification
+        try:
+            _verify_image_integrity(validated_path)
+        except Exception as verify_exc:
+            logger.error(
+                "Post-write integrity check failed for %s – backup preserved at %s",
+                validated_path, backup_path.name,
+            )
+            raise RuntimeError(
+                f"Image integrity verification failed after writing XPTags to {validated_path}: {verify_exc}"
+            ) from verify_exc
+
+        # Step 4: exiftool succeeded and image is valid – remove the backup
+        os.remove(str(backup_path))
 
         logger.debug(
             "Wrote %d new XPTags to %s (total now: %d)",
@@ -196,10 +223,14 @@ def write_xptags(
         )
         return True, len(truly_new)
 
-    except OSError as exc:
-        raise RuntimeError(
-            f"Failed to write XPTags to {validated_path}: exiftool execution error – {exc}"
-        ) from exc
+    except Exception:
+        # On any failure before cleanup, leave the backup for manual recovery
+        if backup_path.exists():
+            logger.warning(
+                "Write failed – backup preserved at %s for manual recovery",
+                backup_path.name,
+            )
+        raise
 
 
 def tag_image_exif(
@@ -220,6 +251,18 @@ def tag_image_exif(
         Tuple of (was_modified, number_of_new_tags_written)
     """
     return write_xptags(image_path, matched_tag_names, base_dir)
+
+
+def _verify_image_integrity(image_path: Path) -> None:
+    """Verify an image file is still readable after modification.
+
+    Uses PIL to open and verify the image without modifying it.
+    Raises if the file is corrupt or unreadable.
+    """
+    from PIL import Image
+
+    with Image.open(str(image_path)) as img:
+        img.verify()
 
 
 def _parse_existing_tags(tags_str: str) -> set[str]:
