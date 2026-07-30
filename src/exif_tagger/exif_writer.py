@@ -1,24 +1,18 @@
-"""EXIF writer - reads and writes XPTags (tag 40094) via exiftool.
+"""EXIF writer - reads and writes XPTags (tag 40094) via PIL/Pillow.
 
-SECURITY NOTE: All subprocess calls use explicit shell=False and argument lists
-to prevent command injection attacks. File paths are validated before use.
+SECURITY NOTE: All file paths are validated before use to prevent path traversal
+attacks. No external subprocess calls — uses Pillow's built-in EXIF support.
 
-Uses exiftool (via subprocess) to handle XPTags reliably, as piexif does not
-have built-in support for XMP/XPTags metadata.
+PIL handles XPTags (tag 40094) natively using UTF-16LE encoding with null
+termination, matching the JPEG/XMP specification.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import shutil
-import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
-
-# SECURITY: Timeout constant for exiftool operations (prevents hanging)
-EXIFTOOL_TIMEOUT = 10  # seconds
 
 
 def _validate_image_path(image_path: Path, base_dir: Path | None = None) -> Path:
@@ -61,17 +55,10 @@ def _validate_image_path(image_path: Path, base_dir: Path | None = None) -> Path
     return resolved
 
 
-def _check_exiftool_available() -> bool:
-    """Check if exiftool is installed and accessible."""
-    import shutil
-    return shutil.which("exiftool") is not None
-
-
 def get_existing_xptags(image_path: Path, base_dir: Path | None = None) -> set[str]:
-    """Read existing XPTags from an image file using exiftool.
+    """Read existing XPTags from an image file using PIL.
 
-    SECURITY: Validates path before use and uses subprocess with explicit shell=False
-    to prevent command injection attacks.
+    SECURITY: Validates path before use to prevent path traversal attacks.
 
     Args:
         image_path: Path to the image file
@@ -90,35 +77,26 @@ def get_existing_xptags(image_path: Path, base_dir: Path | None = None) -> set[s
             return set()
         validated_path = image_path.resolve()
 
-    if not _check_exiftool_available():
-        logger.debug("exiftool not found – cannot read XPTags from %s", validated_path.name)
-        return set()
-
     try:
-        # SECURITY: subprocess with list args and explicit shell=False
-        result = subprocess.run(
-            ["exiftool", "-s3", "-XPTags", str(validated_path)],
-            capture_output=True, 
-            text=True, 
-            timeout=EXIFTOOL_TIMEOUT,
-            check=False,  # Don't raise on non-zero exit
-            shell=False,  # Explicitly disabled for security
-        )
-        if result.returncode != 0:
-            logger.debug("exiftool failed for %s: %s", validated_path.name, result.stderr)
+        from PIL import Image as PILImage
+
+        with PILImage.open(str(validated_path)) as img:
+            exif = img.getexif()
+            raw = exif.get(40094)  # XPTags
+
+        if not raw:
             return set()
 
-        tags_str = (result.stdout or "").strip()
+        # Raw bytes are UTF-16LE encoded, null-terminated semicolon-separated string
+        decoded = raw.decode("utf-16-le").rstrip("\x00")
+        tags_str = decoded.strip()
         if not tags_str:
             return set()
 
         return {t.strip().lower() for t in tags_str.split(";") if t.strip()}
 
-    except subprocess.TimeoutExpired:
-        logger.debug("exiftool timeout for %s", validated_path.name)
-        return set()
-    except OSError as exc:
-        logger.debug("exiftool execution failed for %s: %s", validated_path.name, exc)
+    except Exception as exc:
+        logger.debug("Failed to read XPTags from %s: %s", validated_path.name, exc)
         return set()
 
 
@@ -129,8 +107,8 @@ def write_xptags(
 ) -> tuple[bool, int]:
     """Write new tags to the XPTags field of an image (append mode).
 
-    SECURITY: Validates all paths and uses subprocess with explicit shell=False
-    to prevent command injection attacks.
+    SECURITY: Validates all paths before use to prevent path traversal attacks.
+    Uses PIL for in-place EXIF modification — no external tools required.
 
     Args:
         image_path: Path to the image file
@@ -149,13 +127,6 @@ def write_xptags(
         if base_dir is not None:
             return False, 0
         validated_path = image_path.resolve()
-
-    if not _check_exiftool_available():
-        logger.warning(
-            "exiftool is required but not found. Cannot write XPTags to %s", 
-            validated_path.name
-        )
-        return False, 0
 
     if not new_tags_to_add:
         return False, 0
@@ -176,46 +147,19 @@ def write_xptags(
     merged = existing | {t.lower() for t in truly_new}
     tags_str = ";".join(sorted(merged))
 
-    backup_path = validated_path.with_suffix(validated_path.suffix + ".exif-tagger-backup")
-
     try:
-        # Step 1: Create a backup before modifying the original file
-        shutil.copy2(str(validated_path), str(backup_path))
+        from PIL import Image as PILImage
 
-        # Step 2: Write XPTags via exiftool (modifies in-place)
-        try:
-            result = subprocess.run(
-                ["exiftool", f"-XPTags={tags_str}", str(validated_path)],
-                capture_output=True, 
-                text=True, 
-                timeout=EXIFTOOL_TIMEOUT,
-                check=False,
-                shell=False,  # Explicitly disabled for security
-            )
+        with PILImage.open(str(validated_path)) as img:
+            exif_data = img.getexif()
+            utf16le_value = tags_str.encode("utf-16-le") + b"\x00\x00"  # null-terminated
+            exif_data[40094] = utf16le_value
 
-            if result.returncode != 0:
-                raise RuntimeError(
-                    f"Failed to write XPTags to {validated_path}: exiftool error – {result.stderr}"
-                )
-        except OSError as exc:
-            raise RuntimeError(
-                f"Failed to write XPTags to {validated_path}: exiftool execution error – {exc}"
-            ) from exc
+            # Write EXIF bytes back to the same file
+            img.save(str(validated_path), exif=exif_data.tobytes())
 
-        # Step 3: Verify the image is still readable after modification
-        try:
-            _verify_image_integrity(validated_path)
-        except Exception as verify_exc:
-            logger.error(
-                "Post-write integrity check failed for %s – backup preserved at %s",
-                validated_path, backup_path.name,
-            )
-            raise RuntimeError(
-                f"Image integrity verification failed after writing XPTags to {validated_path}: {verify_exc}"
-            ) from verify_exc
-
-        # Step 4: exiftool succeeded and image is valid – remove the backup
-        os.remove(str(backup_path))
+        # Verify integrity after write
+        _verify_image_integrity(validated_path)
 
         logger.debug(
             "Wrote %d new XPTags to %s (total now: %d)",
@@ -223,14 +167,9 @@ def write_xptags(
         )
         return True, len(truly_new)
 
-    except Exception:
-        # On any failure before cleanup, leave the backup for manual recovery
-        if backup_path.exists():
-            logger.warning(
-                "Write failed – backup preserved at %s for manual recovery",
-                backup_path.name,
-            )
-        raise
+    except Exception as exc:
+        logger.error("Failed to write XPTags to %s: %s", validated_path.name, exc)
+        raise RuntimeError(f"Failed to write XPTags to {validated_path}: {exc}") from exc
 
 
 def tag_image_exif(
@@ -259,9 +198,9 @@ def _verify_image_integrity(image_path: Path) -> None:
     Uses PIL to open and verify the image without modifying it.
     Raises if the file is corrupt or unreadable.
     """
-    from PIL import Image
+    from PIL import Image as PILImage
 
-    with Image.open(str(image_path)) as img:
+    with PILImage.open(str(image_path)) as img:
         img.verify()
 
 
