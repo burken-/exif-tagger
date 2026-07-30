@@ -214,6 +214,17 @@ function renderTags(tags) {
     for (const [name, data] of Object.entries(tags)) {
         addTagCard(name, data.description || '', data.threshold || 0.7);
     }
+    updateTagMoveButtons();
+}
+
+function updateTagMoveButtons() {
+    const cards = document.querySelectorAll('#tags-container .tag-card');
+    cards.forEach((card, index) => {
+        const btnUp = card.querySelector('.tag-move-btn[data-dir="up"]');
+        const btnDown = card.querySelector('.tag-move-btn[data-dir="down"]');
+        if (btnUp) btnUp.disabled = (index === 0);
+        if (btnDown) btnDown.disabled = (index === cards.length - 1);
+    });
 }
 
 function addTagCard(name = '', desc = '', threshold = 0.7) {
@@ -228,7 +239,10 @@ function addTagCard(name = '', desc = '', threshold = 0.7) {
         <button class="btn btn-secondary tag-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger tag-remove-btn" style="padding:4px 8px;">×</button>
     `;
-    card.querySelector('.tag-remove-btn').addEventListener('click', () => card.remove());
+    card.querySelector('.tag-remove-btn').addEventListener('click', () => {
+        card.remove();
+        updateTagMoveButtons();
+    });
     card.querySelectorAll('.tag-move-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const dir = btn.dataset.dir;
@@ -239,9 +253,11 @@ function addTagCard(name = '', desc = '', threshold = 0.7) {
                 const next = card.nextElementSibling;
                 if (next) container.insertBefore(next, card);
             }
+            updateTagMoveButtons();
         });
     });
     container.appendChild(card);
+    updateTagMoveButtons();
 }
 
 document.getElementById('btn-add-tag').addEventListener('click', () => addTagCard());
@@ -250,6 +266,17 @@ function renderExcludes(patterns) {
     const container = document.getElementById('exclude-container');
     container.innerHTML = '';
     patterns.forEach(p => addExcludeItem(p));
+    updateExcludeMoveButtons();
+}
+
+function updateExcludeMoveButtons() {
+    const items = document.querySelectorAll('#exclude-container .exclude-item');
+    items.forEach((item, index) => {
+        const btnUp = item.querySelector('.exclude-move-btn[data-dir="up"]');
+        const btnDown = item.querySelector('.exclude-move-btn[data-dir="down"]');
+        if (btnUp) btnUp.disabled = (index === 0);
+        if (btnDown) btnDown.disabled = (index === items.length - 1);
+    });
 }
 
 function addExcludeItem(pattern = '') {
@@ -262,7 +289,10 @@ function addExcludeItem(pattern = '') {
         <button class="btn btn-secondary exclude-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger exclude-remove-btn" style="padding:4px 8px;">×</button>
     `;
-    item.querySelector('.exclude-remove-btn').addEventListener('click', () => item.remove());
+    item.querySelector('.exclude-remove-btn').addEventListener('click', () => {
+        item.remove();
+        updateExcludeMoveButtons();
+    });
     item.querySelectorAll('.exclude-move-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const dir = btn.dataset.dir;
@@ -273,9 +303,11 @@ function addExcludeItem(pattern = '') {
                 const next = item.nextElementSibling;
                 if (next) container.insertBefore(next, item);
             }
+            updateExcludeMoveButtons();
         });
     });
     container.appendChild(item);
+    updateExcludeMoveButtons();
 }
 
 document.getElementById('btn-add-exclude').addEventListener('click', () => addExcludeItem());
@@ -510,6 +542,9 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    if (isInput) return;
+
     // Ctrl+Enter to start processing
     if (e.ctrlKey && e.key === 'Enter') {
         e.preventDefault();
