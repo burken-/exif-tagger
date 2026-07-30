@@ -20,52 +20,17 @@ ENV_PREFIX = "EXIFTAGGER_"
 
 DEFAULT_CONFIG_PATH = Path("config.yaml")
 
-ALLOWED_ENV_KEYS = frozenset({
-    "EXIFTAGGER_CONFIG_FILE",
-    "EXIFTAGGER_ROOT_DIRECTORY", 
-    "EXIFTAGGER_MODEL_BASE_URL",
-    "EXIFTAGGER_MODEL_MODEL_NAME",
-    "EXIFTAGGER_MODEL_API_KEY",
-    "EXIFTAGGER_MODEL_MAX_TOKENS",
-    "EXIFTAGGER_MODEL_TEMPERATURE",
-    "EXIFTAGGER_MODEL_PARAMS",
-    "EXIFTAGGER_EXCLUDE_PATTERNS",
-    "EXIFTAGGER_MAX_IMAGE_DIMENSION",
-})
-
-
-def _validate_env_key(env_key: str) -> bool:
-    """Validate that environment variable is in the allowed whitelist."""
-    return env_key in ALLOWED_ENV_KEYS
-
-
-def _env_key_to_config_key(env_key: str) -> list[str]:
-    """Convert EXIFTAGGER_ROOT_DIRECTORY → ['root_directory'].
-
-    Uses a fixed mapping for known env → config key paths. Unknown keys map to
-    their lowercase snake_case form as top-level keys.
-    """
-    _MAPPING = {
-        "model_base_url": ["model", "base_url"],
-        "model_model_name": ["model", "model_name"],
-        "model_api_key": ["model", "api_key"],
-        "model_max_tokens": ["model", "max_tokens"],
-        "model_temperature": ["model", "temperature"],
-        "model_params": ["model", "params"],
-        "root_directory": ["root_directory"],
-        "exclude_patterns": ["exclude_patterns"],
-        "max_image_dimension": ["max_image_dimension"],
-    }
-
-    stripped = env_key[len(ENV_PREFIX):].lower()  # type: ignore[operator]
-    return _MAPPING.get(stripped, [stripped])
-
-
-def _set_nested(data: dict[str, Any], keys: list[str], value: Any) -> None:
-    """Set a nested dictionary value from a key path."""
-    for key in keys[:-1]:
-        data = data.setdefault(key, {})
-    data[keys[-1]] = value
+ENV_MAPPING: dict[str, tuple[str, ...]] = {
+    "EXIFTAGGER_ROOT_DIRECTORY": ("root_directory",),
+    "EXIFTAGGER_MODEL_BASE_URL": ("model", "base_url"),
+    "EXIFTAGGER_MODEL_MODEL_NAME": ("model", "model_name"),
+    "EXIFTAGGER_MODEL_API_KEY": ("model", "api_key"),
+    "EXIFTAGGER_MODEL_MAX_TOKENS": ("model", "max_tokens"),
+    "EXIFTAGGER_MODEL_TEMPERATURE": ("model", "temperature"),
+    "EXIFTAGGER_MODEL_PARAMS": ("model", "params"),
+    "EXIFTAGGER_EXCLUDE_PATTERNS": ("exclude_patterns",),
+    "EXIFTAGGER_MAX_IMAGE_DIMENSION": ("max_image_dimension",),
+}
 
 
 def load_config(config_path: str | Path | None = None) -> Config:
@@ -91,21 +56,18 @@ def load_config(config_path: str | Path | None = None) -> Config:
     elif config_path is not None and str(config_file) != str(DEFAULT_CONFIG_PATH):
         raise FileNotFoundError(f"Config file not found: {config_file}")
 
-    for env_key, env_value in os.environ.items():
-        if env_key.startswith(ENV_PREFIX):
-            if not _validate_env_key(env_key):
-                logger.debug("Ignoring non-whitelisted env var: %s", env_key)
-                continue
-                
-            config_keys = _env_key_to_config_key(env_key)
-
-            casted_value: Any = env_value
-            if len(config_keys) == 1 and config_keys[0] == "exclude_patterns":
-                casted_value = _parse_list(env_value)
+    for env_key, keys in ENV_MAPPING.items():
+        if env_key in os.environ:
+            val: Any = os.environ[env_key]
+            if keys[0] == "exclude_patterns" and isinstance(val, str) and not val.startswith("["):
+                val = [i.strip() for i in val.split(",") if i.strip()]
             else:
-                casted_value = _cast_env_value(env_value)
+                val = _cast_env_value(val)
 
-            _set_nested(raw_config, config_keys, casted_value)
+            if len(keys) == 2:
+                raw_config.setdefault(keys[0], {})[keys[1]] = val
+            else:
+                raw_config[keys[0]] = val
 
     try:
         config = Config(**raw_config)
@@ -120,36 +82,16 @@ def _cast_env_value(value: str) -> Any:
         return True
     if value.lower() in ("false", "no"):
         return False
-    try:
+    with contextlib.suppress(ValueError):
         return int(value)
-    except ValueError:
-        pass
-    try:
+    with contextlib.suppress(ValueError):
         return float(value)
-    except ValueError:
-        pass
     if value.startswith(("[", "{")):
-        import json
-
-        try:
+        with contextlib.suppress(json.JSONDecodeError, TypeError):
             parsed = json.loads(value)
             if isinstance(parsed, (list, dict)):
                 return parsed
-        except (json.JSONDecodeError, TypeError):
-            pass
     return value
-
-
-def _parse_list(value: str) -> list[str]:
-    import json
-
-    stripped = value.strip()
-    if stripped.startswith("["):
-        try:
-            return [str(item) for item in json.loads(stripped)]
-        except (json.JSONDecodeError, TypeError):
-            pass
-    return [item.strip() for item in stripped.split(",") if item.strip()]
 
 
 def validate_path_within_base(target_path: str | Path, base_directory: str | Path) -> Path:

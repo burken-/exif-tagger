@@ -81,13 +81,9 @@ function updateStatusUI(data) {
         const hasFailures = data.summary && (data.summary.failed > 0 || (data.summary.errors && data.summary.errors.length > 0));
         indicator.textContent = data.summary ? (hasFailures ? 'Completed with errors' : 'Completed') : 'Idle';
         if (hasFailures) {
-            indicator.className = 'status-badge running'; // yellow/orange reuse — running badge is green; use stopped for orange-red or a custom color
-            indicator.style.background = '#e67e22';
-            indicator.style.color = '#fff';
+            indicator.className = 'status-badge warning';
         } else {
             indicator.className = 'status-badge idle';
-            indicator.style.background = '';
-            indicator.style.color = '';
         }
         isRunning = false;
         btnStart.disabled = false;
@@ -99,9 +95,6 @@ function updateStatusUI(data) {
         const pct = data.progressPct || 0;
         progressBar.style.width = `${pct}%`;
         progressText.textContent = `${data.processed} / ${data.total} images processed (${pct}%)`;
-    } else {
-        progressBar.style.width = '0%';
-        progressText.textContent = '0 / 0 images processed (0%)';
     }
 
     // Update log output continuously without duplicate repetition
@@ -154,6 +147,8 @@ document.getElementById('btn-start').addEventListener('click', async () => {
         if (resp.ok) {
             document.getElementById('log-output').innerHTML = '';
             lastProcessedLogId = 0;
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-text').textContent = '0 / 0 images processed (0%)';
             appendLog('Session started.', 'info');
         } else {
             const err = await resp.json();
@@ -179,15 +174,17 @@ async function loadConfig() {
         const config = await resp.json();
 
         document.getElementById('config-root').value = config.root_directory || '';
+        const folderPathEl = document.getElementById('folder-path');
+        if (folderPathEl) {
+            folderPathEl.placeholder = config.root_directory ? `Default: ${config.root_directory}` : '/data/images/this-month';
+        }
         document.getElementById('model-base-url').value = config.model?.base_url || '';
         document.getElementById('model-name').value = config.model?.model_name || '';
         document.getElementById('model-max-tokens').value = config.model?.max_tokens || 500;
         const tempSlider = document.getElementById('model-temperature');
-        const tempNum = document.getElementById('model-temp-number');
         const tempVal = config.model?.temperature ?? 0.1;
         tempSlider.value = tempVal;
         document.getElementById('temp-value').textContent = tempVal;
-        tempNum.value = tempVal;
 
         // Populate API key field (only if server returned one)
         document.getElementById('model-api-key').value = config.model?.api_key || '';
@@ -214,6 +211,17 @@ function renderTags(tags) {
     for (const [name, data] of Object.entries(tags)) {
         addTagCard(name, data.description || '', data.threshold || 0.7);
     }
+    updateTagMoveButtons();
+}
+
+function updateTagMoveButtons() {
+    const cards = document.querySelectorAll('#tags-container .tag-card');
+    cards.forEach((card, index) => {
+        const btnUp = card.querySelector('.tag-move-btn[data-dir="up"]');
+        const btnDown = card.querySelector('.tag-move-btn[data-dir="down"]');
+        if (btnUp) btnUp.disabled = (index === 0);
+        if (btnDown) btnDown.disabled = (index === cards.length - 1);
+    });
 }
 
 function addTagCard(name = '', desc = '', threshold = 0.7) {
@@ -228,7 +236,10 @@ function addTagCard(name = '', desc = '', threshold = 0.7) {
         <button class="btn btn-secondary tag-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger tag-remove-btn" style="padding:4px 8px;">×</button>
     `;
-    card.querySelector('.tag-remove-btn').addEventListener('click', () => card.remove());
+    card.querySelector('.tag-remove-btn').addEventListener('click', () => {
+        card.remove();
+        updateTagMoveButtons();
+    });
     card.querySelectorAll('.tag-move-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const dir = btn.dataset.dir;
@@ -239,9 +250,11 @@ function addTagCard(name = '', desc = '', threshold = 0.7) {
                 const next = card.nextElementSibling;
                 if (next) container.insertBefore(next, card);
             }
+            updateTagMoveButtons();
         });
     });
     container.appendChild(card);
+    updateTagMoveButtons();
 }
 
 document.getElementById('btn-add-tag').addEventListener('click', () => addTagCard());
@@ -250,6 +263,17 @@ function renderExcludes(patterns) {
     const container = document.getElementById('exclude-container');
     container.innerHTML = '';
     patterns.forEach(p => addExcludeItem(p));
+    updateExcludeMoveButtons();
+}
+
+function updateExcludeMoveButtons() {
+    const items = document.querySelectorAll('#exclude-container .exclude-item');
+    items.forEach((item, index) => {
+        const btnUp = item.querySelector('.exclude-move-btn[data-dir="up"]');
+        const btnDown = item.querySelector('.exclude-move-btn[data-dir="down"]');
+        if (btnUp) btnUp.disabled = (index === 0);
+        if (btnDown) btnDown.disabled = (index === items.length - 1);
+    });
 }
 
 function addExcludeItem(pattern = '') {
@@ -262,7 +286,10 @@ function addExcludeItem(pattern = '') {
         <button class="btn btn-secondary exclude-move-btn" data-dir="down" style="padding:2px 6px; font-size:0.8rem;">↓</button>
         <button class="btn btn-danger exclude-remove-btn" style="padding:4px 8px;">×</button>
     `;
-    item.querySelector('.exclude-remove-btn').addEventListener('click', () => item.remove());
+    item.querySelector('.exclude-remove-btn').addEventListener('click', () => {
+        item.remove();
+        updateExcludeMoveButtons();
+    });
     item.querySelectorAll('.exclude-move-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             const dir = btn.dataset.dir;
@@ -273,24 +300,31 @@ function addExcludeItem(pattern = '') {
                 const next = item.nextElementSibling;
                 if (next) container.insertBefore(next, item);
             }
+            updateExcludeMoveButtons();
         });
     });
     container.appendChild(item);
+    updateExcludeMoveButtons();
 }
 
 document.getElementById('btn-add-exclude').addEventListener('click', () => addExcludeItem());
 
-// Temperature slider ↔ number input sync
-document.getElementById('model-temperature').addEventListener('input', (e) => {
-    const v = e.target.value;
-    document.getElementById('temp-value').textContent = v;
-    document.getElementById('model-temp-number').value = v;
+// API key toggle visibility
+document.getElementById('btn-toggle-api-key').addEventListener('click', () => {
+    const apiKeyInput = document.getElementById('model-api-key');
+    const toggleBtn = document.getElementById('btn-toggle-api-key');
+    if (apiKeyInput.type === 'password') {
+        apiKeyInput.type = 'text';
+        toggleBtn.textContent = '🔒';
+    } else {
+        apiKeyInput.type = 'password';
+        toggleBtn.textContent = '👁️';
+    }
 });
 
-document.getElementById('model-temp-number').addEventListener('input', (e) => {
-    const v = e.target.value;
-    document.getElementById('temp-value').textContent = v;
-    document.getElementById('model-temperature').value = v;
+// Temperature slider display sync
+document.getElementById('model-temperature').addEventListener('input', (e) => {
+    document.getElementById('temp-value').textContent = e.target.value;
 });
 
 document.getElementById('btn-save-config').addEventListener('click', async () => {
@@ -388,11 +422,9 @@ document.getElementById('import-config-input').addEventListener('change', async 
         document.getElementById('model-name').value = config.model?.model_name || '';
         document.getElementById('model-max-tokens').value = config.model?.max_tokens || 500;
         const tempSlider = document.getElementById('model-temperature');
-        const tempNum = document.getElementById('model-temp-number');
         const tempVal = config.model?.temperature ?? 0.1;
         tempSlider.value = tempVal;
         document.getElementById('temp-value').textContent = tempVal;
-        tempNum.value = tempVal;
         document.getElementById('model-use-structured').checked = config.model?.use_structured_outputs || false;
         document.getElementById('model-max-dimension').value = config.model?.max_image_dimension || 720;
         const modelParams = config.model?.params || {};
@@ -434,10 +466,28 @@ function renderSchedules(schedules) {
             <td>${freqType}</td>
             <td>${s.next_run_at || '-'}</td>
             <td style="color:${statusColor}">${s.last_status || 'Never'}</td>
-            <td><button class="btn btn-danger schedule-delete-btn" data-id="${s.id}" style="padding:4px 8px;">Delete</button></td>
+            <td>
+                <button class="btn btn-primary schedule-run-btn" data-id="${s.id}" style="padding:4px 8px; margin-right:4px;">Run Now</button>
+                <button class="btn btn-danger schedule-delete-btn" data-id="${s.id}" style="padding:4px 8px;">Delete</button>
+            </td>
         `;
         tbody.appendChild(tr);
     }
+
+    // Attach run now handlers
+    document.querySelectorAll('.schedule-run-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            try {
+                const resp = await fetch(`${API_BASE}/api/schedule/${btn.dataset.id}/run`, { method: 'POST' });
+                if (resp.ok) {
+                    showToast('Schedule execution started.', 'success');
+                } else {
+                    const err = await resp.json();
+                    showToast('Failed to run schedule: ' + (err.detail || 'Unknown error'), 'error');
+                }
+            } catch (e) { showToast('Network error: ' + e.message, 'error'); }
+        });
+    });
 
     // Attach delete handlers
     document.querySelectorAll('.schedule-delete-btn').forEach(btn => {
@@ -510,6 +560,9 @@ document.getElementById('btn-add-schedule').addEventListener('click', async () =
 
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
+    const isInput = ['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName);
+    if (isInput) return;
+
     // Ctrl+Enter to start processing
     if (e.ctrlKey && e.key === 'Enter') {
         e.preventDefault();

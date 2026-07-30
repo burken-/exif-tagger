@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EXIF Tagger Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -91,21 +94,27 @@
                             <label for="model-temperature">Temperature (0.0–2.0)</label>
                             <input type="range" id="model-temperature" min="0" max="2" step="0.05" value="0.1">
                             <span id="temp-value">0.1</span>
-                            <input type="number" id="model-temp-number" class="temp-number-input" min="0" max="2" step="0.05" value="0.1" style="width:70px; margin-left:8px;">
                         </div>
                     </div>
                     <div class="form-group">
                         <label for="model-api-key">API Key</label>
-                        <input type="password" id="model-api-key" placeholder="sk-... (optional)">
+                        <div class="input-with-button">
+                            <input type="password" id="model-api-key" placeholder="sk-... (optional)">
+                            <button id="btn-toggle-api-key" type="button" class="btn btn-secondary">👁️</button>
+                        </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="model-use-structured">Use Structured Outputs</label>
-                            <input type="checkbox" id="model-use-structured" style="width:auto;margin-top:6px;">
+                            <label class="switch">
+                                <input type="checkbox" id="model-use-structured">
+                                <span class="slider round"></span>
+                            </label>
                         </div>
                         <div class="form-group">
                             <label for="model-max-dimension">Max Image Dimension</label>
                             <input type="number" id="model-max-dimension" min="100" max="4096" value="720">
+                            <small class="field-helper">Resizes high-resolution images before AI analysis to save API tokens and speed up vision processing</small>
                         </div>
                     </div>
                     <div class="form-group">
@@ -116,6 +125,7 @@
 
                 <fieldset>
                     <legend>Tags</legend>
+                    <p class="field-helper" style="font-size:0.75rem; color:#888; margin-bottom:8px;">Higher threshold = AI must be more confident before applying this tag (0.0–1.0)</p>
                     <div class="tag-header" style="display:flex; gap:8px; margin-bottom:6px; font-size:0.75rem; color:#888;">
                         <span style="flex:2;">Tag Name</span>
                         <span style="flex:3;">Description</span>
@@ -128,11 +138,11 @@
 
                 <fieldset>
                     <legend>Exclude Patterns</legend>
+                    <p class="field-helper" style="font-size:0.75rem; color:#888; margin-bottom:8px;">Uses Python regular expressions to skip matching sub-paths (e.g. <code>.*\.tmp$</code>, <code>thumbs\.db</code>, <code>/cache/</code>)</p>
                     <div id="exclude-container"></div>
                     <button id="btn-add-exclude" class="btn btn-secondary">+ Add Pattern</button>
                 </fieldset>
 
-                <p class="field-helper" style="font-size:0.75rem; color:#888; margin-top:6px;">Higher threshold = AI must be more confident before applying this tag (0.0–1.0)</p>
                 <button id="btn-save-config" class="btn btn-primary">Save Configuration</button>
                 <div class="button-row" style="margin-top:12px;">
                     <button id="btn-export-config" class="btn btn-secondary">Export Config as JSON</button>

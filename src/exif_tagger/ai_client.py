@@ -7,7 +7,6 @@ import json
 import logging
 import re
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from openai import OpenAI
@@ -73,8 +72,6 @@ MAX_IMAGE_DIMENSION = 1024
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 2.0
 JPEG_QUALITY = 85
-
-MAX_CONCURRENT_AI_CALLS = 1
 
 
 def _image_to_base64(image_path: Path, max_dim: int = MAX_IMAGE_DIMENSION) -> str:
@@ -270,65 +267,3 @@ def tag_image_with_ai(
         logger.error("Failed to parse AI response for %s: %s", image_path.name, exc)
         raise
 
-
-def tag_images_batch_parallel(
-    model_config: ModelConfig,
-    image_paths: list[Path],
-    tag_definitions: dict[str, TagDefinition],
-    verbose: bool = False,
-    max_concurrent: int = MAX_CONCURRENT_AI_CALLS,
-) -> dict[Path, TaggingResponse]:
-    results: dict[Path, TaggingResponse] = {}
-    total = len(image_paths)
-    
-    if verbose:
-        logger.info("Starting parallel AI processing (%d concurrent workers)", max_concurrent)
-
-    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
-        futures = {
-            executor.submit(
-                tag_image_with_ai, model_config, img_path, tag_definitions
-            ): img_path
-            for img_path in image_paths
-        }
-
-        for i, future in enumerate(as_completed(futures), start=1):
-            img_path = futures[future]
-
-            if verbose:
-                logger.info("Processing image %d/%d: %s", i, total, img_path.name)
-
-            try:
-                response = future.result()  # This will raise if exception occurred
-                results[img_path] = response
-                
-                if verbose and response.results:
-                    matched_names = [r.tag_name for r in response.results if r.score >= 0.5]
-                    logger.info(
-                        "  → %s: evaluated %d tags, scored ≥0.5: %s",
-                        img_path.name, len(response.results), ", ".join(matched_names) or "(none)",
-                    )
-
-            except RuntimeError as exc:
-                logger.error("PERMANENT FAILURE for %s – aborting batch: %s", img_path.name, exc)
-                raise  # Stop the entire run on permanent failure
-    
-    if verbose:
-        logger.info("Parallel AI processing complete (%d images)", len(results))
-
-    return results
-
-
-def tag_images_batch(
-    model_config: ModelConfig,
-    image_paths: list[Path],
-    tag_definitions: dict[str, TagDefinition],
-    verbose: bool = False,
-) -> dict[Path, TaggingResponse]:
-    return tag_images_batch_parallel(
-        model_config=model_config,
-        image_paths=image_paths,
-        tag_definitions=tag_definitions,
-        verbose=verbose,
-        max_concurrent=MAX_CONCURRENT_AI_CALLS,  # Defaults to 1 (sequential)
-    )

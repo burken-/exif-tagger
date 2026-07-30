@@ -203,9 +203,3 @@ def _verify_image_integrity(image_path: Path) -> None:
     with PILImage.open(str(image_path)) as img:
         img.verify()
 
-
-def _parse_existing_tags(tags_str: str) -> set[str]:
-    """Parse semicolon-separated tags into a deduplicated set (lowercased)."""
-    if not tags_str:
-        return set()
-    return {t.strip().lower() for t in tags_str.split(";") if t.strip()}
