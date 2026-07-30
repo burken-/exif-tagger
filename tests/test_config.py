@@ -169,3 +169,48 @@ class TestConfigValidationEdgeCases:
         )
         assert len(cfg.tags) == 1
         assert "tag1" in cfg.tags
+
+
+class TestAtomicCheckpointSave:
+    """Test that save_checkpoint uses atomic write pattern."""
+
+    def test_atomic_write_no_tmp_left(self, tmp_path):
+        """After a successful save, no .tmp file should remain on disk."""
+        from exif_tagger.config import save_checkpoint
+        from exif_tagger.models.schema import ImageCheckpoint
+
+        root = str(tmp_path)
+        images: dict[str, ImageCheckpoint] = {}
+
+        save_checkpoint(root, total_images=10, images=images)
+
+        cp_path = tmp_path / ".exif-tagger-checkpoint.json"
+        assert cp_path.exists()
+        # No temp file should be left behind
+        tmp_file = tmp_path / ".exif-tagger-checkpoint.json.tmp"
+        assert not tmp_file.exists(), "Temp file should not remain after atomic save"
+
+    def test_checkpoint_content_valid(self, tmp_path):
+        """The saved checkpoint should contain valid JSON with expected keys."""
+        import json
+
+        from exif_tagger.config import get_checkpoint_path, save_checkpoint
+        from exif_tagger.models.schema import ImageCheckpoint
+
+        root = str(tmp_path)
+        images: dict[str, ImageCheckpoint] = {
+            "photo.jpg": ImageCheckpoint(
+                path="photo.jpg", status="done", matched_tags=["landscape"]
+            ),
+        }
+
+        save_checkpoint(root, total_images=2, images=images)
+
+        cp_path = get_checkpoint_path(root)
+        with open(cp_path, encoding="utf-8") as fh:
+            data = json.load(fh)
+
+        assert data["version"] == 1
+        assert data["total_images"] == 2
+        assert data["processed"] == 1
+        assert "photo.jpg" in data["images"]

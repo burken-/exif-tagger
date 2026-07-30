@@ -31,7 +31,7 @@ ALLOWED_TYPES = [
 # Conventional Commits pattern: <type>(scope): <description> or <type>: <description> (min 10 chars)
 
 COMMIT_PATTERN = re.compile(
-    r"^(?P<type>" + "|".join(ALLOWED_TYPES) + r")(\([a-z]+\))?: (?P<desc>.{10,})$"
+    r"^(?P<type>" + "|".join(ALLOWED_TYPES) + r")(\([a-z0-9_-]+\))?: (?P<desc>.{10,})$"
 )
 
 

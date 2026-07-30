@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
@@ -241,8 +242,19 @@ def save_checkpoint(
         images={k: v for k, v in images.items()},  # type: ignore[arg-type]
     )
 
-    with open(cp_path, "w", encoding="utf-8") as fh:
-        json.dump(checkpoint.model_dump(), fh, indent=2)
+    tmp_path = cp_path.with_suffix(cp_path.suffix + ".tmp")
+
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(checkpoint.model_dump(), fh, indent=2)
+    except OSError:
+        # Clean up temp file on write failure so we don't leave garbage
+        with contextlib.suppress(OSError):
+            tmp_path.unlink(missing_ok=True)
+        raise
+
+    # Atomic rename — safe even if process is killed mid-operation
+    os.replace(str(tmp_path), str(cp_path))
 
 
 def get_resume_info(
