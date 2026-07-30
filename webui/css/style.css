@@ -32,9 +32,10 @@ header h1 { font-size: 1.5rem; color: #fff; }
     font-weight: 600;
 }
 
-.status-badge.idle { background: #4a4a5a; color: #e8e8f0; }
-.status-badge.running { background: #2ecc71; color: #fff; }
-.status-badge.stopped { background: #e74c3c; color: #fff; }
+.status-badge.idle { background: #374151; color: #f3f4f6; }
+.status-badge.running { background: #059669; color: #fff; }
+.status-badge.stopped { background: #dc2626; color: #fff; }
+.status-badge.warning { background: #d97706; color: #fff; }
 
 /* Tabs */
 .tabs { display: flex; gap: 4px; margin-bottom: 20px; }

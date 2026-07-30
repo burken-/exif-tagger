@@ -81,13 +81,9 @@ function updateStatusUI(data) {
         const hasFailures = data.summary && (data.summary.failed > 0 || (data.summary.errors && data.summary.errors.length > 0));
         indicator.textContent = data.summary ? (hasFailures ? 'Completed with errors' : 'Completed') : 'Idle';
         if (hasFailures) {
-            indicator.className = 'status-badge running'; // yellow/orange reuse — running badge is green; use stopped for orange-red or a custom color
-            indicator.style.background = '#e67e22';
-            indicator.style.color = '#fff';
+            indicator.className = 'status-badge warning';
         } else {
             indicator.className = 'status-badge idle';
-            indicator.style.background = '';
-            indicator.style.color = '';
         }
         isRunning = false;
         btnStart.disabled = false;
@@ -99,9 +95,6 @@ function updateStatusUI(data) {
         const pct = data.progressPct || 0;
         progressBar.style.width = `${pct}%`;
         progressText.textContent = `${data.processed} / ${data.total} images processed (${pct}%)`;
-    } else {
-        progressBar.style.width = '0%';
-        progressText.textContent = '0 / 0 images processed (0%)';
     }
 
     // Update log output continuously without duplicate repetition
@@ -154,6 +147,8 @@ document.getElementById('btn-start').addEventListener('click', async () => {
         if (resp.ok) {
             document.getElementById('log-output').innerHTML = '';
             lastProcessedLogId = 0;
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-text').textContent = '0 / 0 images processed (0%)';
             appendLog('Session started.', 'info');
         } else {
             const err = await resp.json();
