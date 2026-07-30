@@ -45,6 +45,8 @@ htmlcov/
 .husky/*.sh
 
 # Exif-tagger runtime
+config.yaml
+schedules.json
 .exif-tagger-checkpoint.json
 server-log/
 
