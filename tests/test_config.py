@@ -194,7 +194,7 @@ class TestAtomicCheckpointSave:
         """The saved checkpoint should contain valid JSON with expected keys."""
         import json
 
-        from exif_tagger.config import get_checkpoint_path, load_checkpoint, save_checkpoint
+        from exif_tagger.config import get_checkpoint_path, save_checkpoint
         from exif_tagger.models.schema import ImageCheckpoint
 
         root = str(tmp_path)

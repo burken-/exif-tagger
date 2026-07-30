@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -224,7 +223,6 @@ class TestWriteXptagsBackup:
     """Test backup creation, cleanup, and recovery on failure."""
 
     def _make_jpeg(self, tmp_path: Path) -> Path:
-        from io import BytesIO
         from PIL import Image as PILImage
 
         img = tmp_path / "photo.jpg"
@@ -315,7 +313,6 @@ class TestVerifyImageIntegrity:
 
     def test_valid_image_passes(self, tmp_path):
         """A valid JPEG should pass verification."""
-        from io import BytesIO
 
         from PIL import Image as PILImage
 

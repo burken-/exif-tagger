@@ -132,17 +132,17 @@ def _parse_response(content: str) -> TaggingResponse:
     """Parse the AI's response string into a structured TaggingResponse."""
     cleaned = content.strip()
 
+    # Try to extract JSON from markdown code blocks if present
+    if "```" in cleaned:
+        lines = cleaned.split("\n")
+        json_lines = [l for l in lines[1:] if not l.startswith("```")]  # type: ignore[str-bytes-safe]
+        cleaned = "\n".join(json_lines)
+
     # Strip any text outside the JSON object (keep first '{' to last '}')
     brace_start = cleaned.find("{")
     brace_end = cleaned.rfind("}")
     if brace_start != -1 and brace_end != -1 and brace_end > brace_start:
         cleaned = cleaned[brace_start : brace_end + 1]
-
-    # Try to extract JSON from markdown code blocks if present
-    if cleaned.startswith("```"):
-        lines = cleaned.split("\n")
-        json_lines = [l for l in lines[1:] if not l.startswith("```")]  # type: ignore[str-bytes-safe]
-        cleaned = "\n".join(json_lines)
 
     try:
         parsed = json.loads(cleaned)

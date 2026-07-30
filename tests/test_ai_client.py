@@ -82,6 +82,13 @@ class TestParseResponse:
         assert len(result.results) == 1
         assert result.results[0].tag_name == "x"
 
+    def test_preamble_text_before_markdown_code_block(self):
+        """Model may add conversational text before markdown-wrapped JSON."""
+        response_str = 'Here is the analysis:\n\n```json\n{"results": [{"tag_name": "x", "score": 0.8}]}\n```\n'
+        result = _parse_response(response_str)
+        assert len(result.results) == 1
+        assert result.results[0].tag_name == "x"
+
     def test_invalid_json_raises_value_error(self):
         with pytest.raises(ValueError, match="did not return valid JSON"):
             _parse_response("This is not JSON at all!!")
