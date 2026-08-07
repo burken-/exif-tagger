@@ -3,8 +3,9 @@ import { ThemeProvider } from '@/context/ThemeContext';
 import { Header } from '@/components/layout/Header';
 import { Navigation, TabType } from '@/components/layout/Navigation';
 import { ToastProvider } from '@/components/layout/ToastContainer';
+import { ProcessingTab } from '@/components/processing/ProcessingTab';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Play, Image, Settings, Calendar } from 'lucide-react';
+import { Image, Settings, Calendar } from 'lucide-react';
 
 export function AppContent() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -38,26 +39,7 @@ export function AppContent() {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'processing':
-        return (
-          <div className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Play className="w-5 h-5 text-primary" />
-                  <CardTitle>Processing Dashboard</CardTitle>
-                </div>
-                <CardDescription>
-                  Start image processing sessions, monitor progress, and view live logs.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Processing Tab components will be rendered here.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        );
+        return <ProcessingTab />;
       case 'gallery':
         return (
           <div className="space-y-6">
