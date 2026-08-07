@@ -153,3 +153,11 @@ class TestGalleryDatabase:
         assert images[0]["filename"] == "single.jpg"
         assert set(images[0]["tags"]) == {"tag1", "tag2"}
 
+
+def test_get_db_path_data_dir(monkeypatch, tmp_path):
+    from exif_tagger.db import get_db_path
+    monkeypatch.delenv("EXIFTAGGER_DB_FILE", raising=False)
+    monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(tmp_path))
+    assert get_db_path() == tmp_path / "gallery.db"
+
+
