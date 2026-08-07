@@ -4,8 +4,9 @@ import { Header } from '@/components/layout/Header';
 import { Navigation, TabType } from '@/components/layout/Navigation';
 import { ToastProvider } from '@/components/layout/ToastContainer';
 import { ProcessingTab } from '@/components/processing/ProcessingTab';
+import { GalleryTab } from '@/components/gallery/GalleryTab';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Image, Settings, Calendar } from 'lucide-react';
+import { Settings, Calendar } from 'lucide-react';
 
 export function AppContent() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -41,26 +42,7 @@ export function AppContent() {
       case 'processing':
         return <ProcessingTab />;
       case 'gallery':
-        return (
-          <div className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Image className="w-5 h-5 text-primary" />
-                  <CardTitle>Image Gallery</CardTitle>
-                </div>
-                <CardDescription>
-                  Browse images, filter by tags, and manage EXIF tags.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Gallery Tab components will be rendered here.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        );
+        return <GalleryTab />;
       case 'config':
         return (
           <div className="space-y-6">
