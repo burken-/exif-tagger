@@ -101,14 +101,16 @@ export const GalleryTab: React.FC = () => {
                 <span>{isSyncing ? 'Syncing...' : 'Sync Index'}</span>
               </Button>
 
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => setShowManagementPanels((prev) => !prev)}
-                className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-md border border-border bg-card hover:bg-accent transition-colors cursor-pointer h-9"
+                className="flex items-center gap-2 h-9"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <SlidersHorizontal className="w-4 h-4" />
                 <span>{showManagementPanels ? 'Hide Tag Management' : 'Show Tag Management'}</span>
-              </button>
+              </Button>
             </div>
           </div>
         </CardHeader>
