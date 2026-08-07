@@ -19,6 +19,11 @@ if [[ -n "$(git status --porcelain)" ]]; then
     git commit -m "chore: auto-commit working tree before push" || true
 fi
 
+echo "[git-push-pr] Syncing branch with latest origin/main..."
+git fetch origin main
+git rebase origin/main || { echo "ERROR: Merge conflict while rebasing on origin/main. Resolve conflicts first." >&2; exit 1; }
+
+
 echo "[git-push-pr] Running linter (ruff)..."
 if command -v ruff &>/dev/null; then
     ruff check src/ tests/
