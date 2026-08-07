@@ -1,0 +1,17 @@
+#!/bin/sh
+# Husky pre-commit hook - validates code linting before commit
+
+echo "[husky] Running ruff linter check..."
+if command -v ruff >/dev/null 2>&1; then
+  ruff check src/ tests/
+elif [ -f ".venv/bin/ruff" ]; then
+  .venv/bin/ruff check src/ tests/
+fi
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "=========================================================================="
+  echo "ERROR: Ruff linter found errors. Please fix them before committing."
+  echo "=========================================================================="
+  exit 1
+fi

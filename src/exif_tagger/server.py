@@ -224,7 +224,7 @@ def api_status():
     summary = engine.state.summary
     # Ensure total is consistent between top-level and summary.
     if "total" in status and summary is not None:
-        status["total"] = summary.get("total_images_found", status["total"])
+        status["total"] = summary.get("total_processed", status["total"])
     return {**status, "summary": summary}
 
 
@@ -403,6 +403,168 @@ def api_run_schedule(schedule_id: str):
     return {"status": "started"}
 
 
+# ---------------------------------------------------------------------------
+# API Routes — Gallery
+# ---------------------------------------------------------------------------
+
+from exif_tagger.db import (
+    batch_update_tags,
+    get_all_tags,
+    get_gallery_images,
+    get_image_by_id,
+    remove_tag_globally,
+    sync_gallery_index,
+    update_image_tags_in_db_and_exif,
+)
+
+
+class BatchTagRequest(BaseModel):
+    image_ids: list[int]
+    add_tags: list[str] = []
+    remove_tags: list[str] = []
+
+
+class GlobalTagRemoveRequest(BaseModel):
+    tag_name: str
+
+
+class ImageTagsUpdateRequest(BaseModel):
+    tags: list[str]
+
+
+def _sync_index_background() -> None:
+    try:
+        config = load_config(CONFIG_PATH)
+        sync_gallery_index(
+            root_directory=config.root_directory,
+            exclude_patterns=config.exclude_patterns,
+        )
+        logger.info("Background gallery index sync complete")
+    except Exception as e:
+        logger.warning("Background gallery index sync failed: %s", e)
+
+
+@app.post("/api/gallery/sync")
+def api_gallery_sync():
+    """Trigger manual re-sync of gallery database index."""
+    try:
+        config = load_config(CONFIG_PATH)
+        stats = sync_gallery_index(
+            root_directory=config.root_directory,
+            exclude_patterns=config.exclude_patterns,
+        )
+        return {"status": "success", "stats": stats}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to sync gallery index: {e}")
+
+
+@app.get("/api/gallery/images")
+def api_get_gallery_images(
+    offset: int = 0,
+    limit: int = 50,
+    tags: str | None = None,
+    search: str | None = None,
+):
+    """List images with pagination and optional tag/search filtering."""
+    try:
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        images, total = get_gallery_images(
+            offset=offset,
+            limit=limit,
+            tags=tag_list,
+            search=search,
+        )
+        return {
+            "images": images,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to query gallery images: {e}")
+
+
+@app.get("/api/gallery/tags")
+def api_get_gallery_tags():
+    """Get list of all unique tags present across gallery images."""
+    try:
+        tag_names = get_all_tags()
+        return {"tags": tag_names}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch gallery tags: {e}")
+
+
+@app.get("/api/gallery/image/{image_id}")
+def api_get_gallery_image(image_id: int):
+    """Get single image metadata and tags by ID."""
+    image_data = get_image_by_id(image_id)
+    if not image_data:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return image_data
+
+
+@app.get("/api/gallery/image/{image_id}/file")
+def api_get_gallery_image_file(image_id: int):
+    """Serve the raw image file for rendering in the web gallery UI."""
+    image_data = get_image_by_id(image_id)
+    if not image_data:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    file_path = Path(image_data["file_path"])
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Image file does not exist on disk")
+
+    return FileResponse(file_path)
+
+
+@app.put("/api/gallery/image/{image_id}/tags")
+def api_update_gallery_image_tags(image_id: int, req: ImageTagsUpdateRequest):
+    """Manually update tags for a single image."""
+    try:
+        config = load_config(CONFIG_PATH)
+        success = update_image_tags_in_db_and_exif(
+            image_id=image_id,
+            tags=req.tags,
+            base_dir=Path(config.root_directory),
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Image not found")
+        return {"status": "updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update image tags: {e}")
+
+
+@app.post("/api/gallery/batch-tags")
+def api_batch_update_tags(req: BatchTagRequest):
+    """Batch add/remove tags across multiple images."""
+    try:
+        config = load_config(CONFIG_PATH)
+        modified = batch_update_tags(
+            image_ids=req.image_ids,
+            add_tags=req.add_tags,
+            remove_tags=req.remove_tags,
+            base_dir=Path(config.root_directory),
+        )
+        return {"status": "success", "modified": modified}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed batch update: {e}")
+
+
+@app.post("/api/gallery/remove-tag-global")
+def api_remove_tag_global(req: GlobalTagRemoveRequest):
+    """Remove a specified tag from ALL images in the gallery."""
+    try:
+        config = load_config(CONFIG_PATH)
+        modified = remove_tag_globally(
+            tag_name=req.tag_name,
+            base_dir=Path(config.root_directory),
+        )
+        return {"status": "success", "modified": modified}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove tag globally: {e}")
+
 
 # ---------------------------------------------------------------------------
 # UI Routes — serve the dashboard
@@ -440,6 +602,10 @@ async def lifespan(app_instance: FastAPI):  # type: ignore[no-untyped-def]
     logger.info("EXIF Tagger API starting up...")
     _setup_scheduler()
     logger.info(f"Loaded {_schedules.__len__()} schedules")
+
+    # Start background gallery index sync
+    threading.Thread(target=_sync_index_background, daemon=True).start()
+
     yield
     global _scheduler
     if _scheduler:
@@ -456,3 +622,4 @@ app.router.lifespan_context = lifespan
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8080)
+

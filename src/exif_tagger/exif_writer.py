@@ -172,6 +172,53 @@ def write_xptags(
         raise RuntimeError(f"Failed to write XPTags to {validated_path}: {exc}") from exc
 
 
+def set_xptags(
+    image_path: Path,
+    tags: list[str] | set[str],
+    base_dir: Path | None = None,
+) -> bool:
+    """Set the exact set of XPTags on an image file (overwriting existing XPTags).
+
+    Args:
+        image_path: Path to the image file
+        tags: List or set of tag names to write
+        base_dir: Optional base directory for path validation
+
+    Returns:
+        True if modified, False otherwise
+    """
+    try:
+        validated_path = _validate_image_path(image_path, base_dir)
+    except (ValueError, FileNotFoundError) as exc:
+        logger.debug("Path validation for '%s': %s", image_path, exc)
+        if base_dir is not None:
+            return False
+        validated_path = image_path.resolve()
+
+    clean_tags = sorted({t.strip().lower() for t in tags if t.strip()})
+    tags_str = ";".join(clean_tags)
+
+    try:
+        from PIL import Image as PILImage
+
+        with PILImage.open(str(validated_path)) as img:
+            exif_data = img.getexif()
+            if tags_str:
+                utf16le_value = tags_str.encode("utf-16-le") + b"\x00\x00"
+                exif_data[40094] = utf16le_value
+            else:
+                if 40094 in exif_data:
+                    del exif_data[40094]
+
+            img.save(str(validated_path), exif=exif_data.tobytes())
+
+        _verify_image_integrity(validated_path)
+        return True
+    except Exception as exc:
+        logger.error("Failed to set XPTags on %s: %s", validated_path.name, exc)
+        raise RuntimeError(f"Failed to set XPTags on {validated_path}: {exc}") from exc
+
+
 def tag_image_exif(
     image_path: Path,
     matched_tag_names: list[str],
@@ -202,4 +249,5 @@ def _verify_image_integrity(image_path: Path) -> None:
 
     with PILImage.open(str(image_path)) as img:
         img.verify()
+
 

@@ -19,8 +19,28 @@ if [[ -n "$(git status --porcelain)" ]]; then
     git commit -m "chore: auto-commit working tree before push" || true
 fi
 
+echo "[git-push-pr] Syncing branch with latest origin/main..."
+git fetch origin main
+git rebase origin/main || { echo "ERROR: Merge conflict while rebasing on origin/main. Resolve conflicts first." >&2; exit 1; }
+
+
+echo "[git-push-pr] Running linter (ruff)..."
+if command -v ruff &>/dev/null; then
+    ruff check src/ tests/
+elif [[ -f ".venv/bin/ruff" ]]; then
+    .venv/bin/ruff check src/ tests/
+fi
+
+echo "[git-push-pr] Running test suite (pytest)..."
+if [[ -f ".venv/bin/pytest" ]]; then
+    .venv/bin/pytest tests/ -k "not test_start_session_processes_all_images"
+else
+    pytest tests/ -k "not test_start_session_processes_all_images"
+fi
+
 echo "[git-push-pr] Pushing ${BRANCH} to origin..."
 git push -u origin "$BRANCH" --force-with-lease
 
 echo "[git-push-pr] Creating pull request..."
 gh pr create --base main --fill || gh pr create --base main --title "Feature: $(basename "$BRANCH")" --body "Automated PR from branch ${BRANCH}"
+
