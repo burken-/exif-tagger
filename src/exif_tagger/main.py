@@ -7,7 +7,9 @@ import logging
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any
+
 
 CHECKPOINT_BATCH_SIZE = 100
 ERRORS_TO_DISPLAY_MAX = 10
@@ -260,53 +262,56 @@ class PipelineEngine:
 
             _log_tag_list(config.tags)
 
-            all_images = scan_images(
+            from exif_tagger.config import compute_tag_hash, migrate_legacy_checkpoint
+            from exif_tagger.db import (
+                evaluate_thresholds_locally,
+                get_connection,
+                get_unevaluated_candidates,
+                record_tag_evaluation,
+                sync_gallery_index,
+            )
+
+            # 1. Migrate legacy checkpoint if present
+            migrate_legacy_checkpoint(config.root_directory)
+
+            # 2. Sync gallery index & self-heal EXIF tag removals
+            sync_stats = sync_gallery_index(
                 root_directory=config.root_directory,
                 exclude_patterns=config.exclude_patterns or [],
             )
+            total_found = sync_stats.get("total", 0)
 
-            total_found = len(all_images)
-            if total_found == 0:
-                logger.warning("No images found in %s. Nothing to do.", config.root_directory)
-                summary = {
-                    "root_directory": config.root_directory,
-                    "total_images_found": 0,
-                    "total_processed": 0,
-                    "successfully_tagged": 0,
-                    "already_tagged": 0,
-                    "skipped_by_checkpoint": 0,
-                    "failed": 0,
-                    "errors": [],
-                }
-                self.state.start(0)
-                self.state.finish(summary)
-                return summary
+            # 3. Compute tag description hashes
+            tag_hashes = {
+                name: compute_tag_hash(tag_def.description)
+                for name, tag_def in config.tags.items()
+            }
 
-            checkpoint: dict[str, ImageCheckpoint] = {}
-            skipped_by_checkpoint = 0
-            already_tagged = 0
+            # 4. Perform zero-cost local threshold re-evaluation
+            local_stats = evaluate_thresholds_locally(
+                root_directory=config.root_directory,
+                active_tags=config.tags,
+                tag_hashes=tag_hashes,
+            )
 
-            if not force_resume:
-                resumed = get_resume_info(config.root_directory, total_found)
-                if resumed is not None:
-                    logger.info(
-                        "Found checkpoint – %d images already processed. Resuming.",
-                        sum(1 for img in resumed.values() if img.status == "done"),
-                    )
-                    checkpoint = resumed
-                    skipped_by_checkpoint = sum(
-                        1 for img in checkpoint.values() if img.status == "done"
-                    )
+            # 5. Query candidate (image, tag) pairs requiring Vision AI evaluation
+            candidates = get_unevaluated_candidates(
+                root_directory=config.root_directory,
+                active_tags=config.tags,
+                tag_hashes=tag_hashes,
+                limit=max_images,
+            )
 
-            images_to_process, done_from_cp = filter_by_checkpoint(all_images, checkpoint)
-            skipped_by_checkpoint += done_from_cp
+            # Group candidates by image
+            images_candidates_map: dict[str, list[dict[str, Any]]] = {}
+            for c in candidates:
+                images_candidates_map.setdefault(c["file_path"], []).append(c)
 
-            if max_images is not None and len(images_to_process) > max_images:
-                images_to_process = images_to_process[:max_images]
+            images_to_process = [Path(p) for p in images_candidates_map.keys()]
 
             logger.info(
-                "%d total found, %d from previous run (skipped), %d to process now.",
-                total_found, skipped_by_checkpoint, len(images_to_process),
+                "%d total images, %d require vision model evaluation.",
+                total_found, len(images_to_process),
             )
 
             if not images_to_process:
@@ -315,8 +320,8 @@ class PipelineEngine:
                     "total_images_found": total_found,
                     "total_processed": 0,
                     "successfully_tagged": 0,
-                    "already_tagged": already_tagged + skipped_by_checkpoint,
-                    "skipped_by_checkpoint": skipped_by_checkpoint,
+                    "already_tagged": total_found,
+                    "skipped_by_checkpoint": total_found,
                     "failed": 0,
                     "errors": [],
                 }
@@ -329,8 +334,6 @@ class PipelineEngine:
             successfully_tagged = 0
             failed_count = 0
             errors: list[str] = []
-            checkpoint_images: dict[str, ImageCheckpoint] = dict(checkpoint)
-            checkpoint_batch_counter = 0
 
             for i, img_path in enumerate(images_to_process, start=1):
                 if self.state.stop_requested:
@@ -340,59 +343,89 @@ class PipelineEngine:
                 if self.verbose:
                     logger.info("Processing image %d/%d: %s", i, len(images_to_process), img_path.name)
 
+                img_cand_list = images_candidates_map.get(str(img_path), [])
+                if not img_cand_list:
+                    continue
+
+                img_id = img_cand_list[0]["image_id"]
+                img_mtime = img_cand_list[0]["image_mtime"]
+                target_tags = {c["tag_name"]: config.tags[c["tag_name"]] for c in img_cand_list if c["tag_name"] in config.tags}
+
                 try:
                     response = tag_image_with_ai(
-                        config.ai_model, img_path, config.tags,
+                        config.ai_model, img_path, target_tags,
                         max_dim=config.max_image_dimension,
                     )
 
-                    matched_tag_names = []
+                    # Get existing tags from DB
+                    conn = get_connection()
+                    try:
+                        t_rows = conn.execute(
+                            "SELECT tag_name FROM image_tags WHERE image_id = ?", (img_id,)
+                        ).fetchall()
+                        current_exif_tags = {tr["tag_name"].lower() for tr in t_rows}
+                    finally:
+                        conn.close()
+
+                    newly_matched = False
                     for tr in response.results:
-                        tag_def = config.tags.get(tr.tag_name)
-                        if tag_def and tr.score >= tag_def.threshold:
-                            matched_tag_names.append(tr.tag_name)
+                        t_name = tr.tag_name.lower()
+                        tag_def = config.tags.get(t_name)
+                        desc_hash = tag_hashes.get(t_name, "")
+                        is_match = (tag_def is not None) and (tr.score >= tag_def.threshold)
 
-                    modified, n_new = tag_image_exif(img_path, matched_tag_names)
+                        status_str = "matched" if is_match else "not_matched"
 
-                    if modified:
-                        successfully_tagged += 1
-                        logger.info(
-                            "  → Written %d new XPTags: %s",
-                            n_new, ", ".join(matched_tag_names),
+                        record_tag_evaluation(
+                            image_id=img_id,
+                            tag_name=t_name,
+                            description_hash=desc_hash,
+                            status=status_str,
+                            score=tr.score,
+                            reason=tr.reason,
+                            model_name=getattr(config.ai_model, "model_name", "vision_model"),
+                            image_mtime=img_mtime,
                         )
-                    elif self.verbose:
-                        logger.debug("  → All tags already present – no change.")
 
-                    checkpoint_images[str(img_path.resolve())] = ImageCheckpoint(
-                        path=str(img_path), status="done", matched_tags=matched_tag_names, error=None,
-                    )
+                        if is_match:
+                            current_exif_tags.add(t_name)
+                            newly_matched = True
+
+                    if newly_matched:
+                        sorted_tags = sorted(current_exif_tags)
+                        modified, n_new = tag_image_exif(img_path, sorted_tags)
+                        if modified:
+                            successfully_tagged += 1
+
+                        # Update DB image_tags
+                        from datetime import UTC, datetime
+                        now_iso = datetime.now(UTC).isoformat()
+                        conn = get_connection()
+                        try:
+                            with conn:
+                                conn.execute("DELETE FROM image_tags WHERE image_id = ?", (img_id,))
+                                for t in sorted_tags:
+                                    conn.execute(
+                                        "INSERT OR IGNORE INTO image_tags (image_id, tag_name, source, added_at) VALUES (?, ?, 'model', ?)",
+                                        (img_id, t, now_iso),
+                                    )
+                        finally:
+                            conn.close()
 
                 except Exception as exc:
                     failed_count += 1
                     errors.append(f"{img_path.name}: {exc}")
                     logger.error("Failed to process %s: %s", img_path.name, exc)
-                    checkpoint_images[str(img_path.resolve())] = ImageCheckpoint(
-                        path=str(img_path), status="failed", matched_tags=[], error=str(exc),
-                    )
 
                 self.state.update_progress(img_path.name)
-
-                checkpoint_batch_counter += 1
-                if checkpoint_batch_counter >= CHECKPOINT_BATCH_SIZE:
-                    save_checkpoint(config.root_directory, total_found, checkpoint_images)
-                    checkpoint_batch_counter = 0
-                    if self.verbose:
-                        logger.debug("Checkpoint saved (batch of %d)", CHECKPOINT_BATCH_SIZE)
-
-            save_checkpoint(config.root_directory, total_found, checkpoint_images)
 
             summary = {
                 "root_directory": config.root_directory,
                 "total_images_found": total_found,
                 "total_processed": len(images_to_process),
                 "successfully_tagged": successfully_tagged,
-                "already_tagged": already_tagged + skipped_by_checkpoint,
-                "skipped_by_checkpoint": skipped_by_checkpoint,
+                "already_tagged": total_found - len(images_to_process),
+                "skipped_by_checkpoint": total_found - len(images_to_process),
                 "failed": failed_count,
                 "errors": errors,
             }
@@ -406,6 +439,7 @@ class PipelineEngine:
                     print(line)
 
             return summary
+
 
         except Exception as exc:
             logger.error("Fatal error: %s", exc, exc_info=True)

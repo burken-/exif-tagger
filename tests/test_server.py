@@ -225,3 +225,41 @@ class TestComputeNextRun:
         )
         next_run = server_module._compute_next_run(schedule)
         assert next_run is not None
+
+
+class TestApiSuppressions:
+    def test_get_and_delete_suppressions(self, client, tmp_path):
+        from exif_tagger.db import init_db, record_user_suppression, get_connection
+        db_file = tmp_path / "test_server_suppression.db"
+        init_db(db_file)
+
+        img_path = str((tmp_path / "test_suppression.jpg").resolve())
+        conn = get_connection(db_file)
+        try:
+            with conn:
+                cursor = conn.execute(
+                    "INSERT INTO images (file_path, filename, relative_path, last_modified, indexed_at) "
+                    "VALUES (?, 'test.jpg', 'test.jpg', 100.0, '2026-08-07T12:00:00Z')",
+                    (img_path,),
+                )
+                image_id = cursor.lastrowid
+        finally:
+            conn.close()
+
+
+        record_user_suppression(image_id=image_id, tag_name="false_tag", reason="manual_test", db_path=db_file)
+
+        with patch("exif_tagger.db.get_db_path", return_value=db_file):
+            resp = client.get(f"/api/gallery/image/{image_id}/suppressions")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert "suppressions" in data
+            assert len(data["suppressions"]) == 1
+            assert data["suppressions"][0]["tag_name"] == "false_tag"
+
+            del_resp = client.delete(f"/api/gallery/image/{image_id}/suppressions/false_tag")
+            assert del_resp.status_code == 200
+
+            resp_after = client.get(f"/api/gallery/image/{image_id}/suppressions")
+            assert len(resp_after.json()["suppressions"]) == 0
+

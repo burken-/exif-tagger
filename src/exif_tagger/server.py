@@ -566,6 +566,29 @@ def api_remove_tag_global(req: GlobalTagRemoveRequest):
         raise HTTPException(status_code=500, detail=f"Failed to remove tag globally: {e}")
 
 
+@app.get("/api/gallery/image/{image_id}/suppressions")
+def api_get_gallery_image_suppressions(image_id: int):
+    """Get list of user suppressions (blacklisted tags) for an image."""
+    from exif_tagger.db import get_image_suppressions
+    try:
+        suppressions = get_image_suppressions(image_id)
+        return {"suppressions": suppressions}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch suppressions: {e}")
+
+
+@app.delete("/api/gallery/image/{image_id}/suppressions/{tag_name}")
+def api_delete_gallery_image_suppression(image_id: int, tag_name: str):
+    """Remove a user suppression, unblacklisting the tag for future automated runs."""
+    from exif_tagger.db import remove_user_suppression
+    try:
+        remove_user_suppression(image_id, tag_name)
+        return {"status": "removed"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to remove suppression: {e}")
+
+
+
 # ---------------------------------------------------------------------------
 # UI Routes — serve the dashboard
 # ---------------------------------------------------------------------------

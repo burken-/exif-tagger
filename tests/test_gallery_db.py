@@ -138,3 +138,18 @@ class TestGalleryDatabase:
 
         tags_after = get_all_tags(test_db_path)
         assert "nature" not in tags_after
+
+    def test_update_image_in_db_from_file(self, test_db_path, tmp_path):
+        from exif_tagger.db import update_image_in_db_from_file
+        img_path = tmp_path / "single.jpg"
+        img = PILImage.new("RGB", (100, 100), color="yellow")
+        img.save(img_path)
+        set_xptags(img_path, ["tag1", "tag2"])
+
+        update_image_in_db_from_file(img_path, root_directory=tmp_path, db_path=test_db_path)
+
+        images, total = get_gallery_images(db_path=test_db_path)
+        assert total == 1
+        assert images[0]["filename"] == "single.jpg"
+        assert set(images[0]["tags"]) == {"tag1", "tag2"}
+
