@@ -10,7 +10,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-
 CHECKPOINT_BATCH_SIZE = 100
 ERRORS_TO_DISPLAY_MAX = 10
 
@@ -237,10 +236,7 @@ class PipelineEngine:
         force_resume: bool = False,
     ) -> dict:
         from exif_tagger.ai_client import setup_secure_logging, tag_image_with_ai
-        from exif_tagger.config import get_resume_info, save_checkpoint
         from exif_tagger.exif_writer import tag_image_exif
-        from exif_tagger.image_scanner import filter_by_checkpoint, scan_images
-        from exif_tagger.models.schema import ImageCheckpoint
 
         log_level = logging.DEBUG if self.verbose else logging.INFO
         setup_secure_logging(log_level)

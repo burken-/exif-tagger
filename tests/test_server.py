@@ -229,7 +229,7 @@ class TestComputeNextRun:
 
 class TestApiSuppressions:
     def test_get_and_delete_suppressions(self, client, tmp_path):
-        from exif_tagger.db import init_db, record_user_suppression, get_connection
+        from exif_tagger.db import get_connection, init_db, record_user_suppression
         db_file = tmp_path / "test_server_suppression.db"
         init_db(db_file)
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import sqlite3
 from pathlib import Path
+
 from exif_tagger.db import (
     evaluate_thresholds_locally,
     get_connection,
@@ -285,6 +285,7 @@ def test_evaluate_thresholds_locally(tmp_path: Path):
 
 def test_sync_gallery_index_detects_manual_exif_removal(tmp_path: Path):
     from PIL import Image
+
     from exif_tagger.exif_writer import set_xptags
 
     db_file = tmp_path / "test_gallery.db"
@@ -315,7 +316,6 @@ def test_sync_gallery_index_detects_manual_exif_removal(tmp_path: Path):
     set_xptags(img1, [])
 
     # Update mtime slightly to force re-sync
-    import time
     mtime = img1.stat().st_mtime + 5.0
     import os
     os.utime(img1, (mtime, mtime))

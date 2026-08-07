@@ -256,6 +256,7 @@ class TestPipelineEngineIntegration:
         """Helper: execute a start_session call with fully-mocked dependencies."""
         from pathlib import Path as PPath
         from unittest.mock import MagicMock, patch
+
         from exif_tagger.main import PipelineEngine
         from exif_tagger.models.schema import TagResult
 
@@ -328,7 +329,9 @@ class TestPipelineEngineIntegration:
 
     def test_start_session_updates_sqlite_db_per_image(self, tmp_path):
         from unittest.mock import MagicMock, patch
+
         from PIL import Image as PILImage
+
         from exif_tagger.db import get_gallery_images
         from exif_tagger.models.schema import TagResult
 

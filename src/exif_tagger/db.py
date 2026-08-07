@@ -144,7 +144,6 @@ def sync_gallery_index(
         logger.warning("sync_gallery_index: invalid root directory: %s", root_directory)
         return {"total": 0, "indexed": 0, "updated": 0, "deleted": 0}
 
-    from exif_tagger.image_scanner import scan_images
     scanned_paths = scan_images(root, exclude_patterns=exclude_patterns)
     scanned_map = {str(p.resolve()): p for p in scanned_paths}
 
