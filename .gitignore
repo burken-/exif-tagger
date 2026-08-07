@@ -19,6 +19,9 @@ wheels/
 .installed.cfg
 *.egg
 
+# Node
+node_modules/
+
 # Virtual env
 .venv/
 venv/
