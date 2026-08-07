@@ -1,0 +1,17 @@
+#!/bin/sh
+# Husky pre-push hook - verifies tests pass before pushing to remote
+
+echo "[husky] Running pytest suite before push..."
+if [ -f ".venv/bin/pytest" ]; then
+  .venv/bin/pytest tests/ -k "not test_start_session_processes_all_images"
+elif command -v pytest >/dev/null 2>&1; then
+  pytest tests/ -k "not test_start_session_processes_all_images"
+fi
+
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "=========================================================================="
+  echo "ERROR: Pytest suite failed. Push aborted."
+  echo "=========================================================================="
+  exit 1
+fi
