@@ -214,3 +214,53 @@ class TestAtomicCheckpointSave:
         assert data["total_images"] == 2
         assert data["processed"] == 1
         assert "photo.jpg" in data["images"]
+
+
+class TestGetConfigPath:
+    """Test get_config_path resolution and EXIFTAGGER_DATA_DIR auto-initialization."""
+
+    def test_get_config_path_default(self, monkeypatch):
+        from exif_tagger.config import DEFAULT_CONFIG_PATH, get_config_path
+
+        monkeypatch.delenv("EXIFTAGGER_CONFIG_FILE", raising=False)
+        monkeypatch.delenv("EXIFTAGGER_DATA_DIR", raising=False)
+        assert get_config_path() == DEFAULT_CONFIG_PATH
+
+    def test_get_config_path_data_dir(self, monkeypatch, tmp_path):
+        from exif_tagger.config import get_config_path
+
+        monkeypatch.delenv("EXIFTAGGER_CONFIG_FILE", raising=False)
+        monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(tmp_path))
+        path = get_config_path()
+        assert path == tmp_path / "config.yaml"
+
+    def test_get_config_path_config_file_override(self, monkeypatch, tmp_path):
+        from exif_tagger.config import get_config_path
+
+        custom_file = tmp_path / "custom_config.yaml"
+        monkeypatch.setenv("EXIFTAGGER_CONFIG_FILE", str(custom_file))
+        monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(tmp_path / "data"))
+        assert get_config_path() == custom_file
+
+    def test_get_config_path_custom_param(self, monkeypatch, tmp_path):
+        from exif_tagger.config import get_config_path
+
+        param_file = tmp_path / "explicit.yaml"
+        monkeypatch.setenv("EXIFTAGGER_CONFIG_FILE", str(tmp_path / "env.yaml"))
+        monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(tmp_path / "data"))
+        assert get_config_path(param_file) == param_file
+
+    def test_load_config_creates_data_dir_and_copies_example(self, monkeypatch, tmp_path):
+        from exif_tagger.config import load_config
+
+        data_dir = tmp_path / "nested" / "data"
+        monkeypatch.delenv("EXIFTAGGER_CONFIG_FILE", raising=False)
+        monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(data_dir))
+        monkeypatch.setenv("EXIFTAGGER_ROOT_DIRECTORY", str(tmp_path))
+
+        config = load_config()
+        assert data_dir.exists()
+        config_file = data_dir / "config.yaml"
+        assert config_file.exists()
+        assert config.root_directory == str(tmp_path)
+

@@ -6,6 +6,7 @@ import contextlib
 import json
 import logging
 import os
+import shutil
 from datetime import UTC
 from pathlib import Path
 from typing import Any
@@ -33,14 +34,29 @@ ENV_MAPPING: dict[str, tuple[str, ...]] = {
 }
 
 
+def get_config_path(custom_path: str | Path | None = None) -> Path:
+    """Resolve config path from param, EXIFTAGGER_CONFIG_FILE, EXIFTAGGER_DATA_DIR, or default."""
+    if custom_path:
+        return Path(custom_path)
+    env_path = os.environ.get("EXIFTAGGER_CONFIG_FILE")
+    if env_path:
+        return Path(env_path)
+    data_dir = os.environ.get("EXIFTAGGER_DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "config.yaml"
+    return DEFAULT_CONFIG_PATH
+
+
 def load_config(config_path: str | Path | None = None) -> Config:
     """Load configuration from YAML file with env-var overrides."""
-    if config_path is None:
-        config_file = Path(
-            os.environ.get("EXIFTAGGER_CONFIG_FILE", str(DEFAULT_CONFIG_PATH))
-        )
-    else:
-        config_file = Path(config_path)
+    config_file = get_config_path(config_path)
+
+    if not config_file.exists():
+        if os.environ.get("EXIFTAGGER_DATA_DIR") or config_path is None:
+            config_file.parent.mkdir(parents=True, exist_ok=True)
+            example_file = Path("config.yaml.example")
+            if example_file.exists() and not config_file.exists():
+                shutil.copy2(example_file, config_file)
 
     raw_config: dict[str, Any] = {}
 
