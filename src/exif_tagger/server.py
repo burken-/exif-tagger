@@ -443,30 +443,60 @@ class ImageTagsUpdateRequest(BaseModel):
     tags: list[str]
 
 
-def _sync_index_background() -> None:
-    try:
-        config = load_config(CONFIG_PATH)
-        sync_gallery_index(
-            root_directory=config.root_directory,
-            exclude_patterns=config.exclude_patterns,
-        )
-        logger.info("Background gallery index sync complete")
-    except Exception as e:
-        logger.warning("Background gallery index sync failed: %s", e)
+_sync_lock = threading.Lock()
+_sync_state: dict[str, Any] = {
+    "status": "idle",
+    "stats": None,
+    "error": None,
+}
 
 
-@app.post("/api/gallery/sync")
-def api_gallery_sync():
-    """Trigger manual re-sync of gallery database index."""
+def _run_gallery_sync() -> None:
+    global _sync_state
+    with _sync_lock:
+        _sync_state["status"] = "running"
+        _sync_state["error"] = None
     try:
         config = load_config(CONFIG_PATH)
         stats = sync_gallery_index(
             root_directory=config.root_directory,
             exclude_patterns=config.exclude_patterns,
         )
-        return {"status": "success", "stats": stats}
+        logger.info("Gallery index sync complete: %s", stats)
+        with _sync_lock:
+            _sync_state["status"] = "complete"
+            _sync_state["stats"] = stats
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to sync gallery index: {e}")
+        logger.warning("Gallery index sync failed: %s", e)
+        with _sync_lock:
+            _sync_state["status"] = "error"
+            _sync_state["error"] = str(e)
+
+
+def _sync_index_background() -> None:
+    _run_gallery_sync()
+
+
+@app.post("/api/gallery/sync")
+def api_gallery_sync():
+    """Trigger manual re-sync of gallery database index in background."""
+    with _sync_lock:
+        if _sync_state["status"] == "running":
+            return {"status": "running", "message": "Gallery index sync is already running"}
+        _sync_state["status"] = "running"
+        _sync_state["error"] = None
+        _sync_state["stats"] = None
+
+    thread = threading.Thread(target=_run_gallery_sync, daemon=True)
+    thread.start()
+    return {"status": "started", "message": "Gallery index sync started"}
+
+
+@app.get("/api/gallery/sync/status")
+def api_gallery_sync_status():
+    """Get status of gallery index sync."""
+    with _sync_lock:
+        return dict(_sync_state)
 
 
 @app.get("/api/gallery/images")
