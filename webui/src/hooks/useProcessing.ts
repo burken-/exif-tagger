@@ -109,7 +109,7 @@ export function useProcessing() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            rootDirectory: targetFolder.trim() || null,
+            rootDirectory: (targetFolder || '').trim() || null,
             maxImages: targetMax || null,
           }),
         });

@@ -47,6 +47,12 @@ export function useGallery() {
 
       const parsedLimit = parseInt(params.get('limit') || '48', 10);
       setPageSize(isNaN(parsedLimit) || parsedLimit < 1 ? 48 : parsedLimit);
+    } else {
+      setCurrentFolder('');
+      setSearchQuery('');
+      setSelectedTags(new Set());
+      setCurrentPage(1);
+      setPageSize(48);
     }
 
     setTimeout(() => {
