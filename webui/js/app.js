@@ -43,10 +43,412 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         const tabId = `tab-${btn.dataset.tab}`;
         document.getElementById(tabId).classList.add('active');
 
+        if (btn.dataset.tab === 'gallery') loadGallery();
         if (btn.dataset.tab === 'config') loadConfig();
         if (btn.dataset.tab === 'schedule') loadSchedules();
     });
 });
+
+// ... existing status and config logic ...
+// ---------------------------------------------------------------------------
+// Gallery Management
+// ---------------------------------------------------------------------------
+
+let galleryState = {
+    selectedTags: new Set(),
+    selectedImageIds: new Set(),
+    currentPage: 1,
+    pageSize: 24,
+    totalImages: 0,
+    images: [],
+    allTags: [],
+    searchQuery: '',
+    currentModalImageId: null,
+};
+
+async function loadGallery() {
+    await fetchGalleryTags();
+    await fetchGalleryImages();
+}
+
+async function fetchGalleryTags() {
+    try {
+        const resp = await fetch(`${API_BASE}/api/gallery/tags`);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        galleryState.allTags = data.tags || [];
+        renderTagFilters();
+        renderDatalistTags();
+    } catch (e) {
+        console.error('Failed to load gallery tags:', e);
+    }
+}
+
+function renderTagFilters() {
+    const container = document.getElementById('gallery-tag-filters');
+    if (!container) return;
+
+    if (!galleryState.allTags || galleryState.allTags.length === 0) {
+        container.innerHTML = '<span style="font-size:0.85rem; color:#888;">No tags found in gallery.</span>';
+        return;
+    }
+
+    container.innerHTML = galleryState.allTags.map(tag => {
+        const isActive = galleryState.selectedTags.has(tag);
+        return `
+            <label class="tag-filter-chip ${isActive ? 'active' : ''}" data-tag="${tag}">
+                <input type="checkbox" ${isActive ? 'checked' : ''} onchange="toggleTagFilter('${tag}')">
+                #${tag}
+            </label>
+        `;
+    }).join('');
+}
+
+function renderDatalistTags() {
+    const datalist = document.getElementById('existing-tags-datalist');
+    if (!datalist) return;
+    datalist.innerHTML = (galleryState.allTags || []).map(t => `<option value="${t}">`).join('');
+}
+
+window.toggleTagFilter = function(tag) {
+    if (galleryState.selectedTags.has(tag)) {
+        galleryState.selectedTags.delete(tag);
+    } else {
+        galleryState.selectedTags.add(tag);
+    }
+    galleryState.currentPage = 1;
+    renderTagFilters();
+    fetchGalleryImages();
+};
+
+document.getElementById('btn-clear-filters')?.addEventListener('click', () => {
+    galleryState.selectedTags.clear();
+    galleryState.searchQuery = '';
+    const searchInput = document.getElementById('gallery-search-input');
+    if (searchInput) searchInput.value = '';
+    galleryState.currentPage = 1;
+    renderTagFilters();
+    fetchGalleryImages();
+});
+
+async function fetchGalleryImages() {
+    const grid = document.getElementById('gallery-grid');
+    if (!grid) return;
+
+    grid.innerHTML = '<div class="empty-gallery-msg">Loading images...</div>';
+
+    const offset = (galleryState.currentPage - 1) * galleryState.pageSize;
+    const tagQuery = Array.from(galleryState.selectedTags).join(',');
+    const searchQuery = galleryState.searchQuery.trim();
+
+    let url = `${API_BASE}/api/gallery/images?offset=${offset}&limit=${galleryState.pageSize}`;
+    if (tagQuery) url += `&tags=${encodeURIComponent(tagQuery)}`;
+    if (searchQuery) url += `&search=${encodeURIComponent(searchQuery)}`;
+
+    try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error('Failed to fetch gallery images');
+        const data = await resp.json();
+
+        galleryState.images = data.images || [];
+        galleryState.totalImages = data.total || 0;
+
+        renderGalleryGrid();
+        renderPagination();
+        updateSelectedCountUI();
+    } catch (e) {
+        grid.innerHTML = `<div class="empty-gallery-msg" style="color:#f87171;">Error loading images: ${e.message}</div>`;
+    }
+}
+
+function renderGalleryGrid() {
+    const grid = document.getElementById('gallery-grid');
+    if (!grid) return;
+
+    if (!galleryState.images || galleryState.images.length === 0) {
+        grid.innerHTML = '<div class="empty-gallery-msg">No images match your query.</div>';
+        return;
+    }
+
+    grid.innerHTML = galleryState.images.map(img => {
+        const isSelected = galleryState.selectedImageIds.has(img.id);
+        const tagsBadges = (img.tags || []).map(t => `<span class="tag-badge">#${t}</span>`).join(' ');
+
+        return `
+            <div class="gallery-item-card ${isSelected ? 'selected' : ''}" data-id="${img.id}">
+                <input type="checkbox" class="gallery-checkbox-overlay" ${isSelected ? 'checked' : ''} 
+                       onchange="toggleImageSelection(${img.id}, this.checked)">
+                <div class="gallery-thumb-wrap" onclick="openImageModal(${img.id})">
+                    <img class="gallery-thumb-img" src="${API_BASE}/api/gallery/image/${img.id}/file" alt="${img.filename}" loading="lazy">
+                </div>
+                <div class="gallery-item-info">
+                    <div class="gallery-item-title" title="${img.filename}">${img.filename}</div>
+                    <div class="gallery-item-path" title="${img.relative_path}">${img.relative_path}</div>
+                    <div class="tags-badge-list">${tagsBadges || '<span style="font-size:0.7rem; color:#666;">No tags</span>'}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.toggleImageSelection = function(id, checked) {
+    if (checked) {
+        galleryState.selectedImageIds.add(id);
+    } else {
+        galleryState.selectedImageIds.delete(id);
+    }
+
+    const card = document.querySelector(`.gallery-item-card[data-id="${id}"]`);
+    if (card) {
+        if (checked) card.classList.add('selected');
+        else card.classList.remove('selected');
+    }
+    updateSelectedCountUI();
+};
+
+function updateSelectedCountUI() {
+    const countSpan = document.getElementById('selected-count');
+    if (countSpan) countSpan.textContent = galleryState.selectedImageIds.size;
+
+    const batchBtn = document.getElementById('btn-apply-batch');
+    if (batchBtn) batchBtn.disabled = galleryState.selectedImageIds.size === 0;
+}
+
+// Select/Deselect All buttons
+document.getElementById('btn-select-all-page')?.addEventListener('click', () => {
+    (galleryState.images || []).forEach(img => {
+        galleryState.selectedImageIds.add(img.id);
+    });
+    renderGalleryGrid();
+    updateSelectedCountUI();
+});
+
+document.getElementById('btn-deselect-all')?.addEventListener('click', () => {
+    galleryState.selectedImageIds.clear();
+    renderGalleryGrid();
+    updateSelectedCountUI();
+});
+
+// Pagination handlers
+function renderPagination() {
+    const totalPages = Math.ceil(galleryState.totalImages / galleryState.pageSize) || 1;
+    const pageInfo = document.getElementById('pagination-info');
+    const prevBtn = document.getElementById('btn-prev-page');
+    const nextBtn = document.getElementById('btn-next-page');
+
+    if (pageInfo) {
+        pageInfo.textContent = `Page ${galleryState.currentPage} of ${totalPages} (${galleryState.totalImages} total images)`;
+    }
+
+    if (prevBtn) prevBtn.disabled = galleryState.currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = galleryState.currentPage >= totalPages;
+}
+
+document.getElementById('btn-prev-page')?.addEventListener('click', () => {
+    if (galleryState.currentPage > 1) {
+        galleryState.currentPage--;
+        fetchGalleryImages();
+    }
+});
+
+document.getElementById('btn-next-page')?.addEventListener('click', () => {
+    const totalPages = Math.ceil(galleryState.totalImages / galleryState.pageSize) || 1;
+    if (galleryState.currentPage < totalPages) {
+        galleryState.currentPage++;
+        fetchGalleryImages();
+    }
+});
+
+// Search input debouncing
+let searchDebounceTimeout = null;
+document.getElementById('gallery-search-input')?.addEventListener('input', (e) => {
+    clearTimeout(searchDebounceTimeout);
+    searchDebounceTimeout = setTimeout(() => {
+        galleryState.searchQuery = e.target.value;
+        galleryState.currentPage = 1;
+        fetchGalleryImages();
+    }, 300);
+});
+
+// Sync Gallery Index
+document.getElementById('btn-sync-gallery')?.addEventListener('click', async () => {
+    showToast('Syncing gallery index...', 'info');
+    try {
+        const resp = await fetch(`${API_BASE}/api/gallery/sync`, { method: 'POST' });
+        if (resp.ok) {
+            const res = await resp.json();
+            showToast(`Sync complete! Total: ${res.stats?.total || 0}, Updated: ${res.stats?.updated || 0}`, 'success');
+            loadGallery();
+        } else {
+            showToast('Sync failed', 'error');
+        }
+    } catch (e) {
+        showToast('Network error during sync', 'error');
+    }
+});
+
+// Batch Tag Modification
+document.getElementById('btn-apply-batch')?.addEventListener('click', async () => {
+    const selectedIds = Array.from(galleryState.selectedImageIds);
+    if (selectedIds.length === 0) return;
+
+    const addTagsStr = document.getElementById('batch-add-input')?.value || '';
+    const removeTagsStr = document.getElementById('batch-remove-input')?.value || '';
+
+    const addTags = addTagsStr.split(',').map(t => t.trim()).filter(Boolean);
+    const removeTags = removeTagsStr.split(',').map(t => t.trim()).filter(Boolean);
+
+    if (addTags.length === 0 && removeTags.length === 0) {
+        showToast('Specify at least one tag to add or remove.', 'error');
+        return;
+    }
+
+    showToast(`Updating tags for ${selectedIds.length} images...`, 'info');
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/gallery/batch-tags`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                image_ids: selectedIds,
+                add_tags: addTags,
+                remove_tags: removeTags,
+            }),
+        });
+
+        if (resp.ok) {
+            const data = await resp.json();
+            showToast(`Successfully updated ${data.modified} images!`, 'success');
+            document.getElementById('batch-add-input').value = '';
+            document.getElementById('batch-remove-input').value = '';
+            loadGallery();
+        } else {
+            const err = await resp.json();
+            showToast('Batch update failed: ' + (err.detail || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        showToast('Network error during batch update', 'error');
+    }
+});
+
+// Global Tag Removal
+document.getElementById('btn-remove-global-tag')?.addEventListener('click', async () => {
+    const tagInput = document.getElementById('global-tag-input');
+    const tagName = tagInput ? tagInput.value.trim().toLowerCase() : '';
+
+    if (!tagName) {
+        showToast('Please enter a tag name to remove globally.', 'error');
+        return;
+    }
+
+    if (!confirm(`Are you sure you want to remove tag "${tagName}" from ALL photos in the gallery?`)) {
+        return;
+    }
+
+    showToast(`Removing tag "${tagName}" globally...`, 'info');
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/gallery/remove-tag-global`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tag_name: tagName }),
+        });
+
+        if (resp.ok) {
+            const data = await resp.json();
+            showToast(`Removed tag "${tagName}" from ${data.modified} photos.`, 'success');
+            tagInput.value = '';
+            loadGallery();
+        } else {
+            const err = await resp.json();
+            showToast('Global removal failed: ' + (err.detail || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        showToast('Network error during global tag removal', 'error');
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Image Lightbox & Tag Editor Modal
+// ---------------------------------------------------------------------------
+
+window.openImageModal = async function(imageId) {
+    galleryState.currentModalImageId = imageId;
+    const modal = document.getElementById('image-modal');
+    if (!modal) return;
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/gallery/image/${imageId}`);
+        if (!resp.ok) throw new Error('Image not found');
+        const imgData = await resp.json();
+
+        document.getElementById('modal-filename').textContent = imgData.filename;
+        document.getElementById('modal-path').textContent = imgData.file_path;
+        document.getElementById('modal-image-view').src = `${API_BASE}/api/gallery/image/${imageId}/file`;
+
+        const tagsList = document.getElementById('modal-tags-list');
+        tagsList.innerHTML = (imgData.tags || []).map(t => `
+            <span class="tag-badge">
+                #${t}
+                <span class="remove-tag-btn" onclick="removeSingleModalTag('${t}')">&times;</span>
+            </span>
+        `).join('') || '<span style="font-size:0.8rem; color:#888;">No tags applied</span>';
+
+        document.getElementById('modal-tags-input').value = (imgData.tags || []).join(', ');
+
+        modal.style.display = 'flex';
+    } catch (e) {
+        showToast('Failed to load image details', 'error');
+    }
+};
+
+window.removeSingleModalTag = function(tagToRemove) {
+    const input = document.getElementById('modal-tags-input');
+    if (!input) return;
+    const currentTags = input.value.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    const filtered = currentTags.filter(t => t !== tagToRemove.toLowerCase());
+    input.value = filtered.join(', ');
+};
+
+document.getElementById('btn-cancel-modal')?.addEventListener('click', closeModal);
+document.getElementById('modal-close')?.addEventListener('click', closeModal);
+
+function closeModal() {
+    const modal = document.getElementById('image-modal');
+    if (modal) modal.style.display = 'none';
+    galleryState.currentModalImageId = null;
+}
+
+document.getElementById('btn-save-modal-tags')?.addEventListener('click', async () => {
+    const imageId = galleryState.currentModalImageId;
+    if (!imageId) return;
+
+    const inputVal = document.getElementById('modal-tags-input')?.value || '';
+    const newTags = inputVal.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+
+    try {
+        const resp = await fetch(`${API_BASE}/api/gallery/image/${imageId}/tags`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags: newTags }),
+        });
+
+        if (resp.ok) {
+            showToast('Tags updated successfully!', 'success');
+            closeModal();
+            loadGallery();
+        } else {
+            const err = await resp.json();
+            showToast('Failed to update tags: ' + (err.detail || 'Unknown error'), 'error');
+        }
+    } catch (e) {
+        showToast('Network error saving tags', 'error');
+    }
+});
+
+// Load config on startup
+loadConfig();
+
 
 // ---------------------------------------------------------------------------
 // Status polling
@@ -82,6 +484,8 @@ function updateStatusUI(data) {
         indicator.textContent = data.summary ? (hasFailures ? 'Completed with errors' : 'Completed') : 'Idle';
         if (hasFailures) {
             indicator.className = 'status-badge warning';
+        } else if (data.summary) {
+            indicator.className = 'status-badge completed';
         } else {
             indicator.className = 'status-badge idle';
         }

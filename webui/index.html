@@ -19,6 +19,7 @@
         <!-- Tab Navigation -->
         <nav class="tabs">
             <button class="tab-btn active" data-tab="processing">Processing</button>
+            <button class="tab-btn" data-tab="gallery">Gallery</button>
             <button class="tab-btn" data-tab="config">Config</button>
             <button class="tab-btn" data-tab="schedule">Schedule</button>
         </nav>
@@ -61,6 +62,85 @@
                     </div>
                 </div>
                 <div id="log-output" class="log-panel"></div>
+            </div>
+        </section>
+
+        <!-- Gallery Tab -->
+        <section id="tab-gallery" class="tab-content">
+            <div class="card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:16px;">
+                    <h2>Image Gallery</h2>
+                    <div style="display:flex; gap:8px;">
+                        <button id="btn-sync-gallery" class="btn btn-secondary">🔄 Sync Index</button>
+                    </div>
+                </div>
+
+                <!-- Tag Filter Section -->
+                <div class="gallery-filters card-sub">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <label style="font-weight:600; font-size:0.9rem;">Filter by Tags (matches ANY selected tag):</label>
+                        <button id="btn-clear-filters" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:0.75rem;">Clear Filters</button>
+                    </div>
+                    <div id="gallery-tag-filters" class="tag-filter-container">
+                        <span style="font-size:0.85rem; color:#888;">Loading tags...</span>
+                    </div>
+                </div>
+
+                <!-- Action & Search Toolbar -->
+                <div class="gallery-toolbar card-sub">
+                    <div class="form-row" style="align-items:center;">
+                        <div class="form-group" style="flex:2; margin-bottom:0;">
+                            <input type="text" id="gallery-search-input" placeholder="Search by filename or path...">
+                        </div>
+                        <div class="button-row" style="margin-top:0;">
+                            <button id="btn-select-all-page" class="btn btn-secondary">Select All (Page)</button>
+                            <button id="btn-deselect-all" class="btn btn-secondary">Deselect All</button>
+                        </div>
+                    </div>
+
+                    <!-- Batch Operations -->
+                    <div class="batch-panel" style="margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.1);">
+                        <h4 style="margin:0 0 8px 0; font-size:0.9rem; color:#4a9eff;">Batch Tag Actions (<span id="selected-count">0</span> selected)</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="batch-add-input">Add Tags (comma separated)</label>
+                                <input type="text" id="batch-add-input" placeholder="e.g. vacation, summer">
+                            </div>
+                            <div class="form-group">
+                                <label for="batch-remove-input">Remove Tags (comma separated)</label>
+                                <input type="text" id="batch-remove-input" placeholder="e.g. draft, temp">
+                            </div>
+                        </div>
+                        <button id="btn-apply-batch" class="btn btn-primary" disabled>Apply Batch Tags</button>
+                    </div>
+
+                    <!-- Global Tag Removal -->
+                    <div class="global-remove-panel" style="margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.1);">
+                        <h4 style="margin:0 0 8px 0; font-size:0.9rem; color:#ff4a4a;">Remove Tag from ALL Photos in Gallery</h4>
+                        <div class="form-row" style="align-items:flex-end;">
+                            <div class="form-group" style="flex:1;">
+                                <label for="global-tag-input">Tag Name to Remove Everywhere</label>
+                                <input type="text" id="global-tag-input" list="existing-tags-datalist" placeholder="Select or type tag name...">
+                                <datalist id="existing-tags-datalist"></datalist>
+                            </div>
+                            <div class="form-group" style="margin-bottom:0;">
+                                <button id="btn-remove-global-tag" class="btn btn-danger">Remove Tag Globally</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Gallery Grid -->
+                <div id="gallery-grid" class="gallery-grid">
+                    <div class="empty-gallery-msg">No images found matching criteria.</div>
+                </div>
+
+                <!-- Pagination Footer -->
+                <div class="gallery-pagination">
+                    <button id="btn-prev-page" class="btn btn-secondary" disabled>&laquo; Previous</button>
+                    <span id="pagination-info">Page 1 of 1 (0 total images)</span>
+                    <button id="btn-next-page" class="btn btn-secondary" disabled>Next &raquo;</button>
+                </div>
             </div>
         </section>
 
@@ -211,6 +291,37 @@
                 </table>
             </div>
         </section>
+    </div>
+
+    <!-- Image Lightbox & Tag Editor Modal -->
+    <div id="image-modal" class="modal-backdrop" style="display:none;">
+        <div class="modal-content">
+            <button id="modal-close" class="modal-close-btn">&times;</button>
+            <div class="modal-body">
+                <div class="modal-image-container">
+                    <img id="modal-image-view" src="" alt="Full resolution image preview">
+                </div>
+                <div class="modal-details">
+                    <h3 id="modal-filename">Image Name</h3>
+                    <p id="modal-path" class="modal-path-text"></p>
+
+                    <div class="form-group" style="margin-top:16px;">
+                        <label>Current Tags:</label>
+                        <div id="modal-tags-list" class="tags-badge-list"></div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="modal-new-tags">Add/Edit Tags (comma separated):</label>
+                        <input type="text" id="modal-tags-input" placeholder="e.g. landscape, mountain, outdoor">
+                    </div>
+
+                    <div class="button-row">
+                        <button id="btn-save-modal-tags" class="btn btn-primary">Save Tags</button>
+                        <button id="btn-cancel-modal" class="btn btn-secondary">Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="toast-container"></div>
