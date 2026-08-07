@@ -5,8 +5,8 @@ import { Navigation, TabType } from '@/components/layout/Navigation';
 import { ToastProvider } from '@/components/layout/ToastContainer';
 import { ProcessingTab } from '@/components/processing/ProcessingTab';
 import { GalleryTab } from '@/components/gallery/GalleryTab';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Settings, Calendar } from 'lucide-react';
+import { ConfigTab } from '@/components/config/ConfigTab';
+import { ScheduleTab } from '@/components/schedule/ScheduleTab';
 
 export function AppContent() {
   const [activeTab, setActiveTab] = useState<TabType>(() => {
@@ -44,47 +44,9 @@ export function AppContent() {
       case 'gallery':
         return <GalleryTab />;
       case 'config':
-        return (
-          <div className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-primary" />
-                  <CardTitle>Configuration Settings</CardTitle>
-                </div>
-                <CardDescription>
-                  Configure system parameters, LLM backend settings, and tag prompts.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Configuration Tab components will be rendered here.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        );
+        return <ConfigTab />;
       case 'schedule':
-        return (
-          <div className="space-y-6">
-            <Card className="border-border">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-primary" />
-                  <CardTitle>Scheduled Tasks</CardTitle>
-                </div>
-                <CardDescription>
-                  View and manage cron-scheduled tagging jobs.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  Schedule Tab components will be rendered here.
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-        );
+        return <ScheduleTab />;
       default:
         return null;
     }
