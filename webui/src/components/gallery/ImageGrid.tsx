@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckSquare, Square, Image as ImageIcon, Loader2 } from 'lucide-react';
+import { CheckSquare, Square, Image as ImageIcon, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import type { GalleryImage } from '@/types';
 import { ImageCard } from './ImageCard';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,11 @@ interface ImageGridProps {
   onDeselectAll: () => void;
   onImageClick: (image: GalleryImage) => void;
   loading: boolean;
+  totalImages: number;
+  hasActiveFilters: boolean;
+  onSync: () => void;
+  isSyncing: boolean;
+  onClearFilters: () => void;
 }
 
 export const ImageGrid: React.FC<ImageGridProps> = ({
@@ -22,6 +27,11 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
   onDeselectAll,
   onImageClick,
   loading,
+  totalImages,
+  hasActiveFilters,
+  onSync,
+  isSyncing,
+  onClearFilters,
 }) => {
   const selectedOnPage = images.filter((img) => selectedImageIds.has(img.id)).length;
 
@@ -80,14 +90,44 @@ export const ImageGrid: React.FC<ImageGridProps> = ({
             />
           ))}
         </div>
+      ) : !hasActiveFilters && totalImages === 0 ? (
+        /* Initial Sync Empty State */
+        <div className="flex flex-col items-center justify-center min-h-[300px] border border-dashed border-border rounded-lg bg-card/20 py-16 text-center">
+          <RefreshCw className={`w-12 h-12 text-primary/60 mb-3 stroke-1 ${isSyncing ? 'animate-spin' : ''}`} />
+          <p className="text-base font-semibold text-foreground">Initial Gallery Sync Required</p>
+          <p className="text-xs text-muted-foreground max-w-sm mt-1 mb-4">
+            Your image library index is currently empty. Run an initial sync to scan your images directory and build the gallery index.
+          </p>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={onSync}
+            disabled={isSyncing}
+            className="gap-2"
+          >
+            <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing Index...' : 'Run Initial Sync'}
+          </Button>
+        </div>
       ) : (
-        /* Empty State */
+        /* Filtered Empty State */
         <div className="flex flex-col items-center justify-center min-h-[300px] border border-dashed border-border rounded-lg bg-card/20 py-16 text-center">
           <ImageIcon className="w-12 h-12 text-muted-foreground/40 mb-3 stroke-1" />
-          <p className="text-base font-semibold text-foreground">No images found</p>
-          <p className="text-xs text-muted-foreground max-w-sm mt-1">
+          <p className="text-base font-semibold text-foreground">No photos matched your filters</p>
+          <p className="text-xs text-muted-foreground max-w-sm mt-1 mb-4">
             No photos matched your current search filters or folder scope. Try clearing your filters or changing directory.
           </p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onClearFilters}
+            className="gap-2"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Clear Filters
+          </Button>
         </div>
       )}
     </div>

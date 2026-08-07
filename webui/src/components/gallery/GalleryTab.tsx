@@ -179,6 +179,14 @@ export const GalleryTab: React.FC = () => {
             onDeselectAll={deselectAllOnPage}
             onImageClick={(img) => fetchImageDetail(img.id)}
             loading={loading}
+            totalImages={totalImages}
+            hasActiveFilters={Boolean(searchQuery || selectedTags.size > 0 || currentFolder)}
+            onSync={handleSyncIndex}
+            isSyncing={isSyncing}
+            onClearFilters={() => {
+              clearTagFilters();
+              setCurrentFolder('');
+            }}
           />
 
           {/* Pagination Footer */}

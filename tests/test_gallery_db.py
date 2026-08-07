@@ -161,3 +161,10 @@ def test_get_db_path_data_dir(monkeypatch, tmp_path):
     assert get_db_path() == tmp_path / "gallery.db"
 
 
+
+def test_get_db_path_db_file_override(monkeypatch, tmp_path):
+    from exif_tagger.db import get_db_path
+    db_custom = tmp_path / "custom.db"
+    monkeypatch.setenv("EXIFTAGGER_DB_FILE", str(db_custom))
+    monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(tmp_path / "ignored"))
+    assert get_db_path() == db_custom
