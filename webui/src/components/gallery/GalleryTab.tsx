@@ -186,6 +186,7 @@ export const GalleryTab: React.FC = () => {
             onClearFilters={() => {
               clearTagFilters();
               setCurrentFolder('');
+              setSearchQuery('');
             }}
           />
 
