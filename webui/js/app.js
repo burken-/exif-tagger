@@ -499,9 +499,22 @@ document.getElementById('btn-sync-gallery')?.addEventListener('click', async () 
     try {
         const resp = await fetch(`${API_BASE}/api/gallery/sync`, { method: 'POST' });
         if (resp.ok) {
-            const res = await resp.json();
-            showToast(`Sync complete! Total: ${res.stats?.total || 0}, Updated: ${res.stats?.updated || 0}`, 'success');
-            loadGallery();
+            let finished = false;
+            while (!finished) {
+                await new Promise(r => setTimeout(r, 800));
+                const statusResp = await fetch(`${API_BASE}/api/gallery/sync/status`);
+                if (statusResp.ok) {
+                    const statusData = await statusResp.json();
+                    if (statusData.status === 'complete') {
+                        showToast(`Sync complete! Total: ${statusData.stats?.total || 0}, Updated: ${statusData.stats?.updated || 0}`, 'success');
+                        loadGallery();
+                        finished = true;
+                    } else if (statusData.status === 'error') {
+                        showToast(statusData.error || 'Sync failed', 'error');
+                        finished = true;
+                    }
+                }
+            }
         } else {
             showToast('Sync failed', 'error');
         }
@@ -509,6 +522,7 @@ document.getElementById('btn-sync-gallery')?.addEventListener('click', async () 
         showToast('Network error during sync', 'error');
     }
 });
+
 
 // Batch Tag Modification
 document.getElementById('btn-apply-batch')?.addEventListener('click', async () => {

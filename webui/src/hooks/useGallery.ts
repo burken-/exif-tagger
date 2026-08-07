@@ -331,6 +331,29 @@ export function useGallery() {
     setSelectedImageDetail(null);
   }, []);
 
+  // Poll sync status until complete or error
+  const pollSyncStatus = useCallback(async () => {
+    while (true) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      try {
+        const resp = await fetch('/api/gallery/sync/status');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status === 'complete') {
+            await fetchGalleryTags();
+            await fetchGalleryImages();
+            return { success: true, stats: data.stats || { total: 0, updated: 0 } };
+          }
+          if (data.status === 'error') {
+            return { success: false, error: data.error || 'Gallery sync failed' };
+          }
+        }
+      } catch (err: any) {
+        console.error('Error polling sync status:', err);
+      }
+    }
+  }, [fetchGalleryTags, fetchGalleryImages]);
+
   // Sync Gallery Index
   const syncGalleryIndex = useCallback(async () => {
     setIsSyncing(true);
@@ -338,15 +361,41 @@ export function useGallery() {
       const resp = await fetch('/api/gallery/sync', { method: 'POST' });
       if (!resp.ok) throw new Error('Sync failed');
       const res = await resp.json();
-      await fetchGalleryTags();
-      await fetchGalleryImages();
-      return { success: true, stats: res.stats || { total: 0, updated: 0 } };
+
+      if (res.status === 'complete') {
+        await fetchGalleryTags();
+        await fetchGalleryImages();
+        return { success: true, stats: res.stats || { total: 0, updated: 0 } };
+      }
+
+      return await pollSyncStatus();
     } catch (err: any) {
       return { success: false, error: err.message || 'Network error during sync' };
     } finally {
       setIsSyncing(false);
     }
-  }, [fetchGalleryTags, fetchGalleryImages]);
+  }, [fetchGalleryTags, fetchGalleryImages, pollSyncStatus]);
+
+  // Check initial sync status on mount if background sync is already running
+  useEffect(() => {
+    const checkInitialSyncStatus = async () => {
+      try {
+        const resp = await fetch('/api/gallery/sync/status');
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status === 'running') {
+            setIsSyncing(true);
+            await pollSyncStatus();
+            setIsSyncing(false);
+          }
+        }
+      } catch (err) {
+        // ignore initial sync status fetch errors
+      }
+    };
+    checkInitialSyncStatus();
+  }, [pollSyncStatus]);
+
 
   // Setters with pagination reset when filtering
   const handleSetCurrentFolder = useCallback((folder: string) => {

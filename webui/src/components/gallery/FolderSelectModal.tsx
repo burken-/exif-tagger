@@ -19,6 +19,8 @@ interface FolderSelectModalProps {
   breadcrumbs: FolderBreadcrumb[];
   onNavigate: (path: string) => void;
   onSelectFolder: (path: string) => void;
+  title?: string;
+  description?: string;
 }
 
 export const FolderSelectModal: React.FC<FolderSelectModalProps> = ({
@@ -29,6 +31,8 @@ export const FolderSelectModal: React.FC<FolderSelectModalProps> = ({
   breadcrumbs,
   onNavigate,
   onSelectFolder,
+  title = 'Select Image Directory',
+  description = 'Navigate directories to filter your gallery photos.',
 }) => {
   const handleSelectCurrent = () => {
     onSelectFolder(currentModalFolder);
@@ -41,10 +45,10 @@ export const FolderSelectModal: React.FC<FolderSelectModalProps> = ({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FolderOpen className="w-5 h-5 text-primary" />
-            Select Image Directory
+            {title}
           </DialogTitle>
           <DialogDescription>
-            Navigate directories to filter your gallery photos.
+            {description}
           </DialogDescription>
         </DialogHeader>
 
