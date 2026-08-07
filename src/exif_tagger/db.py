@@ -117,12 +117,7 @@ def sync_gallery_index(
                     continue
 
                 db_entry = existing_db_map.get(abs_path_str)
-                needs_update = False
-
-                if db_entry is None:
-                    needs_update = True
-                elif abs(db_entry["last_modified"] - mtime) > 0.001:
-                    needs_update = True
+                needs_update = db_entry is None or abs(db_entry["last_modified"] - mtime) > 0.001
 
                 if needs_update:
                     try:
