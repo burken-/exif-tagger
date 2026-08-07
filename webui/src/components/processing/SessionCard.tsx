@@ -2,11 +2,12 @@ import React from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Folder, Play, Square, Hash } from 'lucide-react';
+import { Folder, FolderOpen, Play, Square, Hash } from 'lucide-react';
 
 export interface SessionCardProps {
   folderPath: string;
   onFolderPathChange: (path: string) => void;
+  onBrowseFolders: () => void;
   maxImages: number | null;
   onMaxImagesChange: (max: number | null) => void;
   isRunning: boolean;
@@ -17,6 +18,7 @@ export interface SessionCardProps {
 export const SessionCard: React.FC<SessionCardProps> = ({
   folderPath,
   onFolderPathChange,
+  onBrowseFolders,
   maxImages,
   onMaxImagesChange,
   isRunning,
@@ -59,14 +61,28 @@ export const SessionCard: React.FC<SessionCardProps> = ({
                 <Folder className="w-4 h-4 text-muted-foreground" />
                 Folder Path
               </label>
-              <Input
-                id="folderPath"
-                type="text"
-                value={folderPath}
-                onChange={(e) => onFolderPathChange(e.target.value)}
-                placeholder="/data/images/this-month"
-                disabled={isRunning}
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="folderPath"
+                  type="text"
+                  value={folderPath}
+                  onChange={(e) => onFolderPathChange(e.target.value)}
+                  placeholder="/data/images/this-month"
+                  disabled={isRunning}
+                  className="flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onBrowseFolders}
+                  disabled={isRunning}
+                  className="flex items-center gap-1.5 shrink-0 h-9"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Browse
+                </Button>
+              </div>
               <p className="text-xs text-muted-foreground">
                 Target directory path containing images to process.
               </p>

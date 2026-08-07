@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { LogItem, ProcessingStatus } from '../types';
+import type { LogItem, ProcessingStatus, FolderItem, FolderBreadcrumb, FoldersResponse } from '../types';
 
 export function useProcessing() {
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -12,6 +12,9 @@ export function useProcessing() {
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
   const [statusText, setStatusText] = useState<string>('Idle');
   const [summary, setSummary] = useState<{ failed: number; errors?: any[] } | null>(null);
+  const [folders, setFolders] = useState<FolderItem[]>([]);
+  const [modalFolder, setModalFolder] = useState<string>('');
+  const [folderBreadcrumbs, setFolderBreadcrumbs] = useState<FolderBreadcrumb[]>([]);
 
   const lastProcessedLogIdRef = useRef<number>(0);
   const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -156,6 +159,21 @@ export function useProcessing() {
     lastProcessedLogIdRef.current = 0;
   }, []);
 
+  const fetchFolders = useCallback(async (path = '') => {
+    setModalFolder(path);
+    try {
+      const resp = await fetch(`/api/gallery/folders?path=${encodeURIComponent(path)}`);
+      if (!resp.ok) throw new Error('Failed to fetch folders');
+      const data: FoldersResponse = await resp.json();
+      setFolders(data.folders || []);
+      setFolderBreadcrumbs(data.breadcrumbs || []);
+    } catch (err: any) {
+      console.error('Failed to load folders:', err);
+      setFolders([]);
+      setFolderBreadcrumbs([]);
+    }
+  }, []);
+
   return {
     isRunning,
     folderPath,
@@ -167,9 +185,13 @@ export function useProcessing() {
     autoScroll,
     statusText,
     summary,
+    folders,
+    modalFolder,
+    folderBreadcrumbs,
     startProcessing,
     stopProcessing,
     clearLogs,
+    fetchFolders,
     setAutoScroll,
     setFolderPath,
     setMaxImages,

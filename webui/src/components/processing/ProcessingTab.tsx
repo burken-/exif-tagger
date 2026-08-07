@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useProcessing } from '@/hooks/useProcessing';
 import { useToast } from '@/components/layout/ToastContainer';
 import { SessionCard } from './SessionCard';
 import { ProgressCard } from './ProgressCard';
 import { LogOutputCard } from './LogOutputCard';
+import { FolderSelectModal } from '@/components/gallery/FolderSelectModal';
 
 export const ProcessingTab: React.FC = () => {
   const {
@@ -17,15 +18,30 @@ export const ProcessingTab: React.FC = () => {
     autoScroll,
     statusText,
     summary,
+    folders,
+    modalFolder,
+    folderBreadcrumbs,
     startProcessing,
     stopProcessing,
     clearLogs,
+    fetchFolders,
     setAutoScroll,
     setFolderPath,
     setMaxImages,
   } = useProcessing();
 
   const { showToast } = useToast();
+  const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
+
+  const handleBrowseFolders = () => {
+    fetchFolders('');
+    setIsFolderModalOpen(true);
+  };
+
+  const handleSelectFolder = (path: string) => {
+    setFolderPath(path);
+    setIsFolderModalOpen(false);
+  };
 
   const handleStart = async () => {
     const res = await startProcessing();
@@ -54,6 +70,7 @@ export const ProcessingTab: React.FC = () => {
       <SessionCard
         folderPath={folderPath}
         onFolderPathChange={setFolderPath}
+        onBrowseFolders={handleBrowseFolders}
         maxImages={maxImages}
         onMaxImagesChange={setMaxImages}
         isRunning={isRunning}
@@ -75,6 +92,19 @@ export const ProcessingTab: React.FC = () => {
         autoScroll={autoScroll}
         onAutoScrollChange={setAutoScroll}
         onClearLogs={clearLogs}
+      />
+
+      {/* Folder Selection Dialog */}
+      <FolderSelectModal
+        open={isFolderModalOpen}
+        onOpenChange={setIsFolderModalOpen}
+        currentModalFolder={modalFolder}
+        folders={folders}
+        breadcrumbs={folderBreadcrumbs}
+        onNavigate={(path) => fetchFolders(path)}
+        onSelectFolder={handleSelectFolder}
+        title="Select Processing Directory"
+        description="Navigate and select the directory containing images to process."
       />
     </div>
   );
