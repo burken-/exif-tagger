@@ -51,9 +51,8 @@ def load_config(config_path: str | Path | None = None) -> Config:
     """Load configuration from YAML file with env-var overrides."""
     config_file = get_config_path(config_path)
 
-    if not config_file.exists():
-        if os.environ.get("EXIFTAGGER_DATA_DIR") or config_path is None:
-            config_file.parent.mkdir(parents=True, exist_ok=True)
+    if not config_file.exists() and (os.environ.get("EXIFTAGGER_DATA_DIR") or config_path is None):
+        config_file.parent.mkdir(parents=True, exist_ok=True)
             example_file = Path("config.yaml.example")
             if example_file.exists() and not config_file.exists():
                 shutil.copy2(example_file, config_file)
