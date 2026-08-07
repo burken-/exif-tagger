@@ -54,6 +54,7 @@ def init_db(db_path: str | Path | None = None) -> None:
                     filename TEXT NOT NULL,
                     relative_path TEXT NOT NULL,
                     last_modified REAL NOT NULL,
+                    file_hash TEXT,
                     indexed_at TEXT NOT NULL
                 )
             """)
@@ -62,16 +63,70 @@ def init_db(db_path: str | Path | None = None) -> None:
                 CREATE TABLE IF NOT EXISTS image_tags (
                     image_id INTEGER NOT NULL,
                     tag_name TEXT NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'model',
+                    added_at TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (image_id, tag_name),
+                    FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
+                )
+            """)
+
+            # Schema migration check for existing image_tags table
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(image_tags)").fetchall()
+            }
+            if "source" not in columns:
+                conn.execute("ALTER TABLE image_tags ADD COLUMN source TEXT NOT NULL DEFAULT 'model';")
+            if "added_at" not in columns:
+                conn.execute("ALTER TABLE image_tags ADD COLUMN added_at TEXT NOT NULL DEFAULT '';")
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tag_definitions (
+                    tag_name TEXT PRIMARY KEY,
+                    description TEXT NOT NULL,
+                    description_hash TEXT NOT NULL,
+                    threshold REAL NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tag_evaluations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    image_id INTEGER NOT NULL,
+                    tag_name TEXT NOT NULL,
+                    description_hash TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    score REAL NOT NULL DEFAULT 0.0,
+                    reason TEXT,
+                    model_name TEXT NOT NULL,
+                    evaluated_at TEXT NOT NULL,
+                    image_mtime REAL NOT NULL,
+                    FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE,
+                    UNIQUE(image_id, tag_name)
+                )
+            """)
+
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS user_suppressions (
+                    image_id INTEGER NOT NULL,
+                    tag_name TEXT NOT NULL,
+                    suppressed_at TEXT NOT NULL,
+                    reason TEXT DEFAULT 'manual_removal',
                     PRIMARY KEY (image_id, tag_name),
                     FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
                 )
             """)
 
             conn.execute("CREATE INDEX IF NOT EXISTS idx_images_file_path ON images(file_path);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_images_relative_path ON images(relative_path);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_tags_tag_name ON image_tags(tag_name);")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_image_tags_image_id ON image_tags(image_id);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_evaluations_image_tag ON tag_evaluations(image_id, tag_name);")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_suppressions_image_tag ON user_suppressions(image_id, tag_name);")
     finally:
         conn.close()
+
 
 
 def sync_gallery_index(
@@ -91,6 +146,7 @@ def sync_gallery_index(
 
     scanned_paths = scan_images(root, exclude_patterns=exclude_patterns)
     scanned_map = {str(p.resolve()): p for p in scanned_paths}
+
 
     conn = get_connection(db_path)
     updated_count = 0
@@ -139,6 +195,21 @@ def sync_gallery_index(
                         image_id = cursor.lastrowid
                     else:
                         image_id = db_entry["id"]
+
+                        # Self-healing: Check if any previous model tags were removed from EXIF
+                        old_tags = conn.execute(
+                            "SELECT tag_name, source FROM image_tags WHERE image_id = ?", (image_id,)
+                        ).fetchall()
+                        clean_new_exif = {t.strip().lower() for t in exif_tags if t.strip()}
+
+                        for ot in old_tags:
+                            t_name = ot["tag_name"].lower()
+                            if ot["source"] == "model" and t_name not in clean_new_exif:
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO user_suppressions (image_id, tag_name, suppressed_at, reason) VALUES (?, ?, ?, 'exif_removal')",
+                                    (image_id, t_name, now_iso),
+                                )
+
                         conn.execute(
                             """
                             UPDATE images
@@ -153,11 +224,12 @@ def sync_gallery_index(
                         clean_tag = t.strip().lower()
                         if clean_tag:
                             conn.execute(
-                                "INSERT OR IGNORE INTO image_tags (image_id, tag_name) VALUES (?, ?)",
-                                (image_id, clean_tag),
+                                "INSERT OR IGNORE INTO image_tags (image_id, tag_name, source, added_at) VALUES (?, ?, 'manual_exif', ?)",
+                                (image_id, clean_tag, now_iso),
                             )
 
                     updated_count += 1
+
 
         return {
             "total": len(scanned_paths),
@@ -309,13 +381,31 @@ def update_image_tags_in_db_and_exif(
 
         mtime = image_path.stat().st_mtime if image_path.exists() else row["last_modified"]
 
+        # Get old tags for suppression tracking
+        current_tags_rows = conn.execute(
+            "SELECT tag_name FROM image_tags WHERE image_id = ?", (image_id,)
+        ).fetchall()
+        old_tags = {r["tag_name"].lower() for r in current_tags_rows}
+
+        removed_tags = old_tags - set(clean_tags)
+        added_tags = set(clean_tags) - old_tags
+
+        for r_tag in removed_tags:
+            record_user_suppression(image_id, r_tag, reason="manual_ui_removal", db_path=db_path)
+        for a_tag in added_tags:
+            remove_user_suppression(image_id, a_tag, db_path=db_path)
+
+        from datetime import UTC, datetime
+        now_iso = datetime.now(UTC).isoformat()
+
         with conn:
             conn.execute("UPDATE images SET last_modified = ? WHERE id = ?", (mtime, image_id))
             conn.execute("DELETE FROM image_tags WHERE image_id = ?", (image_id,))
             for t in clean_tags:
+                source = "manual_ui" if t in added_tags else "model"
                 conn.execute(
-                    "INSERT OR IGNORE INTO image_tags (image_id, tag_name) VALUES (?, ?)",
-                    (image_id, t),
+                    "INSERT OR IGNORE INTO image_tags (image_id, tag_name, source, added_at) VALUES (?, ?, ?, ?)",
+                    (image_id, t, source, now_iso),
                 )
         return True
     finally:
@@ -354,6 +444,9 @@ def batch_update_tags(
             image_ids,
         ).fetchall()
 
+        from datetime import UTC, datetime
+        now_iso = datetime.now(UTC).isoformat()
+
         for row in rows:
             img_id = row["id"]
             img_path = Path(row["file_path"])
@@ -362,7 +455,12 @@ def batch_update_tags(
             current_tags_rows = conn.execute(
                 "SELECT tag_name FROM image_tags WHERE image_id = ?", (img_id,)
             ).fetchall()
-            current_tags = {r["tag_name"] for r in current_tags_rows}
+            current_tags = {r["tag_name"].lower() for r in current_tags_rows}
+
+            for r_tag in to_remove:
+                record_user_suppression(img_id, r_tag, reason="manual_ui_removal", db_path=db_path)
+            for a_tag in to_add:
+                remove_user_suppression(img_id, a_tag, db_path=db_path)
 
             new_tags = (current_tags | to_add) - to_remove
             if new_tags != current_tags:
@@ -376,9 +474,10 @@ def batch_update_tags(
                     conn.execute("UPDATE images SET last_modified = ? WHERE id = ?", (mtime, img_id))
                     conn.execute("DELETE FROM image_tags WHERE image_id = ?", (img_id,))
                     for t in sorted_tags:
+                        source = "manual_ui" if t in to_add else "model"
                         conn.execute(
-                            "INSERT OR IGNORE INTO image_tags (image_id, tag_name) VALUES (?, ?)",
-                            (img_id, t),
+                            "INSERT OR IGNORE INTO image_tags (image_id, tag_name, source, added_at) VALUES (?, ?, ?, ?)",
+                            (img_id, t, source, now_iso),
                         )
                 modified_count += 1
 
@@ -420,3 +519,371 @@ def remove_tag_globally(
         )
     finally:
         conn.close()
+
+
+def update_image_in_db_from_file(
+    img_path: str | Path,
+    root_directory: str | Path | None = None,
+    db_path: str | Path | None = None,
+) -> None:
+    """Insert or update a single image record and its current EXIF XPTags in the SQLite database."""
+    init_db(db_path)
+    path = Path(img_path).resolve()
+    if not path.exists():
+        return
+
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return
+
+    abs_path_str = str(path)
+    if root_directory:
+        root = Path(root_directory).resolve()
+        try:
+            rel_path = path.relative_to(root).as_posix()
+        except ValueError:
+            rel_path = path.name
+    else:
+        rel_path = path.name
+
+    exif_tags = get_existing_xptags(path)
+    from datetime import UTC, datetime
+    now_iso = datetime.now(UTC).isoformat()
+
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            row = conn.execute("SELECT id FROM images WHERE file_path = ?", (abs_path_str,)).fetchone()
+            if row is None:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO images (file_path, filename, relative_path, last_modified, indexed_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (abs_path_str, path.name, rel_path, mtime, now_iso),
+                )
+                image_id = cursor.lastrowid
+            else:
+                image_id = row["id"]
+                conn.execute(
+                    """
+                    UPDATE images
+                    SET filename = ?, relative_path = ?, last_modified = ?, indexed_at = ?
+                    WHERE id = ?
+                    """,
+                    (path.name, rel_path, mtime, now_iso, image_id),
+                )
+                conn.execute("DELETE FROM image_tags WHERE image_id = ?", (image_id,))
+
+            for t in exif_tags:
+                clean_tag = t.strip().lower()
+                if clean_tag:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO image_tags (image_id, tag_name) VALUES (?, ?)",
+                        (image_id, clean_tag),
+                    )
+    finally:
+        conn.close()
+
+
+def record_tag_evaluation(
+    image_id: int,
+    tag_name: str,
+    description_hash: str,
+    status: str,
+    score: float,
+    reason: str | None,
+    model_name: str,
+    image_mtime: float,
+    db_path: str | Path | None = None,
+) -> None:
+    """Insert or replace a tag evaluation record for an image and tag pair."""
+    from datetime import UTC, datetime
+    init_db(db_path)
+    conn = get_connection(db_path)
+    now_iso = datetime.now(UTC).isoformat()
+    clean_tag = tag_name.strip().lower()
+
+    try:
+        with conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO tag_evaluations
+                (image_id, tag_name, description_hash, status, score, reason, model_name, evaluated_at, image_mtime)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    image_id,
+                    clean_tag,
+                    description_hash,
+                    status,
+                    score,
+                    reason,
+                    model_name,
+                    now_iso,
+                    image_mtime,
+                ),
+            )
+    finally:
+        conn.close()
+
+
+def record_user_suppression(
+    image_id: int,
+    tag_name: str,
+    reason: str = "manual_removal",
+    db_path: str | Path | None = None,
+) -> None:
+    """Record a user suppression for an image and tag pair to prevent future automated tagging."""
+    from datetime import UTC, datetime
+    init_db(db_path)
+    conn = get_connection(db_path)
+    now_iso = datetime.now(UTC).isoformat()
+    clean_tag = tag_name.strip().lower()
+
+    try:
+        with conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO user_suppressions (image_id, tag_name, suppressed_at, reason)
+                VALUES (?, ?, ?, ?)
+                """,
+                (image_id, clean_tag, now_iso, reason),
+            )
+            # Remove from active image_tags if present
+            conn.execute(
+                "DELETE FROM image_tags WHERE image_id = ? AND tag_name = ?",
+                (image_id, clean_tag),
+            )
+    finally:
+        conn.close()
+
+
+def remove_user_suppression(
+    image_id: int,
+    tag_name: str,
+    db_path: str | Path | None = None,
+) -> None:
+    """Remove a user suppression record, allowing future automated re-evaluation."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    clean_tag = tag_name.strip().lower()
+
+    try:
+        with conn:
+            conn.execute(
+                "DELETE FROM user_suppressions WHERE image_id = ? AND tag_name = ?",
+                (image_id, clean_tag),
+            )
+    finally:
+        conn.close()
+
+
+def get_unevaluated_candidates(
+    root_directory: str | Path,
+    active_tags: dict[str, Any],
+    tag_hashes: dict[str, str],
+    subfolder: str | None = None,
+    limit: int | None = None,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return (image, tag) candidate objects that require Vision Model AI evaluation.
+
+    Excludes tags that are suppressed by user or already evaluated with the current description_hash & mtime.
+    """
+    init_db(db_path)
+    root = Path(root_directory).resolve()
+    conn = get_connection(db_path)
+
+    try:
+        # Build image filtering query
+        query_sql = "SELECT id, file_path, relative_path, last_modified FROM images"
+        params: list[Any] = []
+
+        if subfolder:
+            clean_sub = subfolder.strip().strip("/").lower()
+            if clean_sub and clean_sub != ".":
+                query_sql += " WHERE LOWER(relative_path) LIKE ?"
+                params.append(f"{clean_sub}/%")
+
+        query_sql += " ORDER BY id ASC"
+        rows = conn.execute(query_sql, params).fetchall()
+
+        # Build lookup set of suppressions: set of (image_id, tag_name)
+        sup_rows = conn.execute("SELECT image_id, tag_name FROM user_suppressions").fetchall()
+        suppressed_set = {(r["image_id"], r["tag_name"].lower()) for r in sup_rows}
+
+        # Build lookup dict of existing evaluations: (image_id, tag_name) -> (description_hash, image_mtime)
+        eval_rows = conn.execute(
+            "SELECT image_id, tag_name, description_hash, image_mtime FROM tag_evaluations"
+        ).fetchall()
+        eval_map = {
+            (r["image_id"], r["tag_name"].lower()): (r["description_hash"], r["image_mtime"])
+            for r in eval_rows
+        }
+
+        candidates: list[dict[str, Any]] = []
+
+        for row in rows:
+            img_id = row["id"]
+            img_path_str = row["file_path"]
+            rel_path = row["relative_path"]
+            mtime = row["last_modified"]
+
+            for tag_name, tag_def in active_tags.items():
+                clean_tag = tag_name.strip().lower()
+                desc_hash = tag_hashes.get(clean_tag, "")
+
+                # 1. Skip if suppressed by user
+                if (img_id, clean_tag) in suppressed_set:
+                    continue
+
+                # 2. Check if already evaluated with matching hash and mtime
+                existing_eval = eval_map.get((img_id, clean_tag))
+                if existing_eval is not None:
+                    e_hash, e_mtime = existing_eval
+                    if e_hash == desc_hash and abs(e_mtime - mtime) < 0.001:
+                        continue
+
+                candidates.append({
+                    "image_id": img_id,
+                    "file_path": img_path_str,
+                    "relative_path": rel_path,
+                    "tag_name": clean_tag,
+                    "tag_def": tag_def,
+                    "description_hash": desc_hash,
+                    "image_mtime": mtime,
+                })
+
+                if limit and len(candidates) >= limit:
+                    return candidates
+
+        return candidates
+    finally:
+        conn.close()
+
+
+def evaluate_thresholds_locally(
+    root_directory: str | Path,
+    active_tags: dict[str, Any],
+    tag_hashes: dict[str, str],
+    db_path: str | Path | None = None,
+) -> dict[str, int]:
+    """Re-evaluates existing confidence scores against new thresholds without AI API calls.
+
+    Updates image_tags and EXIF XPTags if a tag score crosses the updated threshold.
+    Returns stats dict: {"added": int, "removed": int}.
+    """
+    init_db(db_path)
+    conn = get_connection(db_path)
+    added_count = 0
+    removed_count = 0
+
+    try:
+        # Load all evaluations matching current description hashes
+        eval_rows = conn.execute(
+            "SELECT image_id, tag_name, description_hash, score, status FROM tag_evaluations"
+        ).fetchall()
+
+        # Group by image_id
+        image_evals: dict[int, list[sqlite3.Row]] = {}
+        for er in eval_rows:
+            image_evals.setdefault(er["image_id"], []).append(er)
+
+        # Get existing image tags and suppressions
+        tag_rows = conn.execute("SELECT image_id, tag_name, source FROM image_tags").fetchall()
+        existing_tags_map: dict[int, set[str]] = {}
+        for tr in tag_rows:
+            existing_tags_map.setdefault(tr["image_id"], set()).add(tr["tag_name"].lower())
+
+        sup_rows = conn.execute("SELECT image_id, tag_name FROM user_suppressions").fetchall()
+        suppressed_set = {(r["image_id"], r["tag_name"].lower()) for r in sup_rows}
+
+        image_rows = conn.execute("SELECT id, file_path FROM images").fetchall()
+        img_path_map = {r["id"]: Path(r["file_path"]) for r in image_rows}
+
+        for img_id, evals in image_evals.items():
+            img_path = img_path_map.get(img_id)
+            if not img_path or not img_path.exists():
+                continue
+
+            current_tags = set(existing_tags_map.get(img_id, set()))
+            modified = False
+
+            for ev in evals:
+                t_name = ev["tag_name"].lower()
+                tag_def = active_tags.get(t_name)
+                if not tag_def:
+                    continue
+
+                curr_hash = tag_hashes.get(t_name, "")
+                if ev["description_hash"] != curr_hash:
+                    # Skip local update if description changed (needs AI call)
+                    continue
+
+                if (img_id, t_name) in suppressed_set:
+                    continue
+
+                threshold = getattr(tag_def, "threshold", 0.7)
+                score = ev["score"]
+                should_be_tagged = (score >= threshold) and (ev["status"] == "matched")
+
+                if should_be_tagged and t_name not in current_tags:
+                    current_tags.add(t_name)
+                    added_count += 1
+                    modified = True
+                elif not should_be_tagged and t_name in current_tags:
+                    # Only remove if added by model
+                    current_tags.remove(t_name)
+                    removed_count += 1
+                    modified = True
+
+            if modified:
+                sorted_tags = sorted(current_tags)
+                from exif_tagger.exif_writer import set_xptags
+                set_xptags(img_path, sorted_tags)
+
+                mtime = img_path.stat().st_mtime
+                from datetime import UTC, datetime
+                now_iso = datetime.now(UTC).isoformat()
+
+                with conn:
+                    conn.execute("UPDATE images SET last_modified = ? WHERE id = ?", (mtime, img_id))
+                    conn.execute("DELETE FROM image_tags WHERE image_id = ?", (img_id,))
+                    for t in sorted_tags:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO image_tags (image_id, tag_name, source, added_at) VALUES (?, ?, 'model', ?)",
+                            (img_id, t, now_iso),
+                        )
+
+        return {"added": added_count, "removed": removed_count}
+    finally:
+        conn.close()
+
+
+def get_image_suppressions(
+    image_id: int,
+    db_path: str | Path | None = None,
+) -> list[dict[str, Any]]:
+    """Get list of user suppressions for a given image ID."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT tag_name, suppressed_at, reason FROM user_suppressions WHERE image_id = ? ORDER BY tag_name ASC",
+            (image_id,),
+        ).fetchall()
+        return [
+            {
+                "tag_name": r["tag_name"],
+                "suppressed_at": r["suppressed_at"],
+                "reason": r["reason"],
+            }
+            for r in rows
+        ]
+    finally:
+        conn.close()
+
+
+

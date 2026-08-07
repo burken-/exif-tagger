@@ -10,8 +10,21 @@ import pytest
 from PIL import Image
 
 # ---------------------------------------------------------------------------
+# Fixture to isolate SQLite database per test
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def isolate_test_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Ensure every test operates on an isolated SQLite database file."""
+    db_file = tmp_path / "isolated_test_gallery.db"
+    monkeypatch.setenv("EXIFTAGGER_DB_FILE", str(db_file))
+    return db_file
+
+
+# ---------------------------------------------------------------------------
 # Fixtures for creating temporary images
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture()
 def sample_jpeg(tmp_path: Path) -> Path:

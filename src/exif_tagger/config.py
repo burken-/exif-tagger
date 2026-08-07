@@ -213,3 +213,75 @@ def get_resume_info(
     if done_count > 0 or failed_count > 0:
         return cp
     return None
+
+
+def compute_tag_hash(description: str) -> str:
+    """Compute a normalized SHA256 hex string hash of a tag description."""
+    import hashlib
+    normalized = description.strip().lower()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+
+
+def migrate_legacy_checkpoint(
+    root_directory: str | Path,
+    db_path: str | Path | None = None,
+) -> int:
+    """Migrate legacy .exif-tagger-checkpoint JSON data into SQLite database."""
+    cp_path = get_checkpoint_path(root_directory)
+    if not cp_path.exists():
+        return 0
+
+    try:
+        data = load_checkpoint(root_directory, 0)
+        if not data:
+            return 0
+
+        from exif_tagger.db import get_connection, init_db, record_tag_evaluation
+        init_db(db_path)
+        conn = get_connection(db_path)
+        migrated_count = 0
+
+        try:
+            for path_str, cp in data.items():
+                if cp.status != "done":
+                    continue
+
+                abs_path = str(Path(path_str).resolve())
+                row = conn.execute("SELECT id, last_modified FROM images WHERE file_path = ?", (abs_path,)).fetchone()
+                if not row:
+                    continue
+
+                img_id = row["id"]
+                mtime = row["last_modified"]
+
+                for tag_name in cp.matched_tags:
+                    clean_tag = tag_name.strip().lower()
+                    record_tag_evaluation(
+                        image_id=img_id,
+                        tag_name=clean_tag,
+                        description_hash="legacy_imported",
+                        status="matched",
+                        score=1.0,
+                        reason="Migrated from legacy JSON checkpoint",
+                        model_name="legacy",
+                        image_mtime=mtime,
+                        db_path=db_path,
+                    )
+                    with conn:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO image_tags (image_id, tag_name, source) VALUES (?, ?, 'model')",
+                            (img_id, clean_tag),
+                        )
+                    migrated_count += 1
+        finally:
+            conn.close()
+
+        # Remove migrated JSON checkpoint
+        with contextlib.suppress(OSError):
+            cp_path.unlink(missing_ok=True)
+
+        return migrated_count
+    except Exception as exc:
+        logger.warning("Legacy checkpoint migration failed: %s", exc)
+        return 0
+

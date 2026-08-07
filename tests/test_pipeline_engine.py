@@ -252,116 +252,128 @@ class TestPipelineEngineIntegration:
     so the full pipeline can be exercised without real files or API calls.
     """
 
-    def _make_engine(self, tmp_path):
-        """Helper: create a fully-mocked PipelineEngine and return it."""
+    def _run_session(self, tmp_path, max_images=None):
+        """Helper: execute a start_session call with fully-mocked dependencies."""
         from pathlib import Path as PPath
-        from unittest.mock import patch
-        
-        # Import inside so the patched module is used correctly
-        from exif_tagger.main import PipelineEngine
+        from unittest.mock import MagicMock, patch
 
-        # Create dummy image files on disk (needed for resolve() in pipeline)
+        from exif_tagger.main import PipelineEngine
+        from exif_tagger.models.schema import TagResult
+
         images_dir = tmp_path / "images"
         images_dir.mkdir(exist_ok=True)
 
+        from PIL import Image
         created_paths: list[PPath] = []
         for i in range(3):
             p = images_dir / f"img_{i}.jpg"
-            p.write_bytes(b"\xff\xd8\xff\xe0")  # minimal JPEG header bytes
+            Image.new("RGB", (50, 50), color=(255, 0, 0)).save(p, format="JPEG")
             created_paths.append(p)
 
-        from exif_tagger.models.schema import TagResult
-        
+
         mock_response = MagicMock()
         mock_response.results = [TagResult(tag_name="dog", score=0.9)]
 
         def fake_exif(img_path, matched_names):
             if not matched_names:
                 return False, 0
-            n_new = len(matched_names)
-            return True, n_new
+            return True, len(matched_names)
 
         class MockConfig:
             root_directory: str = str(images_dir)
             tags: dict[str, MagicMock] = {"dog": MagicMock(description="tag", threshold=0.5)}
             exclude_patterns: list | None = None
             ai_model: str = "test-model"
+            max_image_dimension: int = 1024
 
-            def validate(self):
-                pass
-            
-            def validate_exclude_patterns(self):
-                pass
-        
-        # Patch all external calls inside start_session() and return engine
+            def validate(self): pass
+            def validate_exclude_patterns(self): pass
+
         with patch("exif_tagger.config.load_config", return_value=MockConfig()):
-            with patch("exif_tagger.image_scanner.scan_images", return_value=[p for p in sorted(created_paths)]):
-                def fake_filter(images, checkpoint):
-                    # No pre-existing done images (checkpoint is empty)
-                    return list(images), 0
-                
-                with patch("exif_tagger.image_scanner.filter_by_checkpoint", side_effect=fake_filter):
+            with patch("exif_tagger.image_scanner.scan_images", return_value=created_paths):
+                with patch("exif_tagger.image_scanner.filter_by_checkpoint", side_effect=lambda imgs, cp: (list(imgs), 0)):
                     with patch("exif_tagger.config.get_resume_info", return_value=None):
                         with patch("exif_tagger.ai_client.setup_secure_logging"):
                             with patch("exif_tagger.ai_client.tag_image_with_ai", return_value=mock_response):
                                 with patch("exif_tagger.exif_writer.tag_image_exif", side_effect=fake_exif):
-                                    # Silence checkpoint writes for speed
                                     with patch("exif_tagger.config.save_checkpoint"):
-                                        engine = PipelineEngine(config_path="config.yaml")
-                                        return engine
+                                        with patch("exif_tagger.db.update_image_in_db_from_file"):
+                                            engine = PipelineEngine(config_path="config.yaml")
+                                            summary = engine.start_session(max_images=max_images)
+                                            return engine, summary
 
     def test_start_session_processes_all_images(self, tmp_path):
         """start_session should process all images and return a summary."""
-        engine = self._make_engine(tmp_path)
-        
-        # Verify the pipeline runs without error — exact counts depend on real image data
-        result = engine.start_session()
+        engine, result = self._run_session(tmp_path)
 
         has_errors = isinstance(result.get("errors"), list) or "error" in result
         assert has_errors, f"'errors' or 'error' key missing from result: {result}"
         assert "root_directory" in result or any(k.startswith("error") for k in result)
-        
+
     def test_start_session_returns_summary_dict(self, tmp_path):
         """start_session should return a dict with all summary keys."""
-        engine = self._make_engine(tmp_path)
-        
-        # Need to re-create for fresh session — but we can't use the generator again.
-        # Covered by test_start_session_processes_all_images above
+        engine, summary = self._run_session(tmp_path)
+        assert summary["total_images_found"] == 3
+        assert summary["total_processed"] == 3
 
     def test_get_summary_after_session_completion(self, tmp_path):
-        """After start_session() completes and state.finish() is called, get_summary should return it."""
-        
-        engine = self._make_engine(tmp_path)
-        
-        # Directly call finish to simulate what start_session does on a successful run
-        test_summary = {
-            "root_directory": str(tmp_path / "images"),
-            "total_images_found": 3,
-            "total_processed": 2,
-            "successfully_tagged": 1,
-            "already_tagged": 0,
-            "skipped_by_checkpoint": 1,
-            "failed": 0,
-            "errors": [],
-        }
-        
-        # start_session may return early for skipped images (no state.finish called in that path)
-        engine.state.start(3)
-        engine.state.update_progress("img_0.jpg")
-        engine.state.update_progress("img_1.jpg")
-        engine.state.finish(test_summary)
-        
-        retrieved = engine.get_summary()
-        assert retrieved is not None
-        assert retrieved["total_processed"] == 2
+        """After start_session() completes, state.summary should match."""
+        engine, summary = self._run_session(tmp_path)
+        assert engine.state.summary == summary
 
     def test_get_status_after_session_completion(self, tmp_path):
-        """After completion, get_status should show running=False."""
-        engine = self._make_engine(tmp_path)
-        engine.start_session()
-        
-        status = engine.get_status()
-        assert status["running"] is False
+        """After completion, state.running should be False."""
+        engine, _ = self._run_session(tmp_path)
+        assert engine.state.running is False
+
+
+    def test_start_session_updates_sqlite_db_per_image(self, tmp_path):
+        from unittest.mock import MagicMock, patch
+
+        from PIL import Image as PILImage
+
+        from exif_tagger.db import get_gallery_images
+        from exif_tagger.models.schema import TagResult
+
+        images_dir = tmp_path / "db_test_images"
+        images_dir.mkdir(exist_ok=True)
+        img1_path = images_dir / "test1.jpg"
+        img1 = PILImage.new("RGB", (50, 50), color="blue")
+        img1.save(img1_path)
+
+
+        db_path = tmp_path / "gallery.db"
+
+        mock_response = MagicMock()
+        mock_response.results = [TagResult(tag_name="dog", score=0.9)]
+
+        class MockTagDef:
+            description = "A dog"; threshold = 0.5
+
+        class MockConfig:
+            root_directory: str = str(images_dir)
+            tags: dict[str, MagicMock] = {"dog": MockTagDef()}
+            exclude_patterns: list | None = None
+            ai_model: str = "test-model"
+            max_image_dimension: int = 1024
+
+            def validate(self): pass
+            def validate_exclude_patterns(self): pass
+
+        with patch("exif_tagger.config.load_config", return_value=MockConfig()):
+            with patch("exif_tagger.ai_client.setup_secure_logging"):
+                with patch("exif_tagger.ai_client.tag_image_with_ai", return_value=mock_response):
+                    with patch("exif_tagger.db.get_db_path", return_value=db_path):
+                        from exif_tagger.main import PipelineEngine
+                        engine = PipelineEngine(config_path="config.yaml")
+                        summary = engine.start_session(root_directory=str(images_dir))
+
+        images, total = get_gallery_images(db_path=db_path)
+        print("DEBUG images in db:", [img["filename"] for img in images])
+        assert total == 1
+        assert images[0]["filename"] == "test1.jpg"
+        assert "dog" in images[0]["tags"]
+
 
 
 class TestRunFunction:
