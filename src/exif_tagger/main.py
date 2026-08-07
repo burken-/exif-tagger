@@ -224,7 +224,15 @@ class PipelineEngine:
 
         self._config: Config = load_config(self.config_path)
         if root_directory_override:
-            self._config.root_directory = root_directory_override
+            override_path = Path(root_directory_override)
+            if override_path.is_absolute():
+                self._config.root_directory = str(override_path)
+            else:
+                # Relative paths from the folder browser are relative to the
+                # configured root_directory, not the process working directory.
+                self._config.root_directory = str(
+                    Path(self._config.root_directory) / override_path
+                )
         self._config.validate()
         self._config.validate_exclude_patterns()
         return self._config
