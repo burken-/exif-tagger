@@ -263,3 +263,19 @@ class TestApiSuppressions:
             resp_after = client.get(f"/api/gallery/image/{image_id}/suppressions")
             assert len(resp_after.json()["suppressions"]) == 0
 
+
+def test_get_schedules_file_path_data_dir(monkeypatch, tmp_path):
+    from exif_tagger.server import get_schedules_file_path
+    monkeypatch.delenv("EXIFTAGGER_SCHEDULES_FILE", raising=False)
+    monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(tmp_path))
+    assert get_schedules_file_path() == tmp_path / "schedules.json"
+
+
+def test_get_schedules_file_path_override(monkeypatch, tmp_path):
+    from exif_tagger.server import get_schedules_file_path
+    schedules_custom = tmp_path / "custom_schedules.json"
+    monkeypatch.setenv("EXIFTAGGER_SCHEDULES_FILE", str(schedules_custom))
+    monkeypatch.setenv("EXIFTAGGER_DATA_DIR", str(tmp_path / "ignored"))
+    assert get_schedules_file_path() == schedules_custom
+
+
