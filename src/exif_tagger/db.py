@@ -22,12 +22,15 @@ DEFAULT_DB_PATH = _config_dir / "gallery.db"
 
 
 def get_db_path(custom_path: str | Path | None = None) -> Path:
-    """Resolve SQLite database path from param, env var, or default location."""
+    """Resolve SQLite database path from param, env var, data dir, or default location."""
     if custom_path:
         return Path(custom_path)
     env_path = os.environ.get("EXIFTAGGER_DB_FILE")
     if env_path:
         return Path(env_path)
+    data_dir = os.environ.get("EXIFTAGGER_DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "gallery.db"
     return DEFAULT_DB_PATH
 
 

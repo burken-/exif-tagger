@@ -20,7 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from exif_tagger.config import load_config
+from exif_tagger.config import get_config_path, load_config
 from exif_tagger.main import PipelineEngine
 from exif_tagger.models.schema import ScheduleModel, TagDefinition
 
@@ -34,13 +34,21 @@ _engine_lock = threading.Lock()
 _schedules: dict[str, ScheduleModel] = {}
 _scheduler: BackgroundScheduler | None = None
 _config_dir = Path(__file__).resolve().parent.parent.parent
-CONFIG_PATH = os.environ.get(
-    "EXIFTAGGER_CONFIG_FILE", str(_config_dir / "config.yaml")
-)
-_schedules_env = os.environ.get("EXIFTAGGER_SCHEDULES_FILE", "")
-SCHEDULES_FILE = (
-    Path(_schedules_env) if _schedules_env else _config_dir / "schedules.json"
-)
+
+
+def get_schedules_file_path() -> Path:
+    env_path = os.environ.get("EXIFTAGGER_SCHEDULES_FILE")
+    if env_path:
+        return Path(env_path)
+    data_dir = os.environ.get("EXIFTAGGER_DATA_DIR")
+    if data_dir:
+        return Path(data_dir) / "schedules.json"
+    return _config_dir / "schedules.json"
+
+
+CONFIG_PATH = str(get_config_path())
+SCHEDULES_FILE = get_schedules_file_path()
+
 
 # Setup server-log folder for debugging server errors
 SERVER_LOG_DIR = _config_dir / "server-log"
@@ -92,9 +100,10 @@ def _get_engine() -> PipelineEngine:
 
 def _load_schedules() -> dict[str, ScheduleModel]:
     """Load schedules from disk."""
-    if SCHEDULES_FILE.exists():
+    schedules_file = get_schedules_file_path()
+    if schedules_file.exists():
         try:
-            with open(SCHEDULES_FILE) as f:
+            with open(schedules_file) as f:
                 data = json.load(f)
             return {sid: ScheduleModel(**sdata) for sid, sdata in data.items()}
         except (json.JSONDecodeError, Exception):
@@ -104,9 +113,11 @@ def _load_schedules() -> dict[str, ScheduleModel]:
 
 def _save_schedules() -> None:
     """Persist schedules to disk."""
-    SCHEDULES_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(SCHEDULES_FILE, "w") as f:
+    schedules_file = get_schedules_file_path()
+    schedules_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(schedules_file, "w") as f:
         json.dump({sid: s.model_dump() for sid, s in _schedules.items()}, f, indent=2)
+
 
 
 def _compute_next_run(schedule: ScheduleModel) -> str | None:

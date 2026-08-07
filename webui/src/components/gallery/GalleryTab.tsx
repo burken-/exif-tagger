@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Image as ImageIcon, SlidersHorizontal } from 'lucide-react';
+import { Image as ImageIcon, SlidersHorizontal, RefreshCw, Info } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { useGallery } from '@/hooks/useGallery';
 import { useToast } from '@/components/layout/ToastContainer';
 import { FolderBreadcrumbs } from './FolderBreadcrumbs';
@@ -87,18 +88,47 @@ export const GalleryTab: React.FC = () => {
               </CardDescription>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowManagementPanels((prev) => !prev)}
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-md border border-border bg-card hover:bg-accent transition-colors self-start sm:self-auto cursor-pointer"
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              <span>{showManagementPanels ? 'Hide Tag Management' : 'Show Tag Management'}</span>
-            </button>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleSyncIndex}
+                disabled={isSyncing}
+                className="flex items-center gap-2 shrink-0 h-9"
+              >
+                <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin text-primary' : ''}`} />
+                <span>{isSyncing ? 'Syncing...' : 'Sync Index'}</span>
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowManagementPanels((prev) => !prev)}
+                className="flex items-center gap-2 h-9"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                <span>{showManagementPanels ? 'Hide Tag Management' : 'Show Tag Management'}</span>
+              </Button>
+            </div>
           </div>
         </CardHeader>
 
         <CardContent className="space-y-5">
+          {/* Top Info Banner when totalImages === 0 && !isSyncing && !loading */}
+          {totalImages === 0 && !isSyncing && !loading && (
+            <div className="flex items-start gap-3 p-4 rounded-lg border border-indigo-500/30 bg-indigo-500/10 text-indigo-200 text-sm">
+              <Info className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-indigo-100">No images indexed yet</p>
+                <p className="text-xs text-indigo-200/80 mt-0.5">
+                  Click <strong>Sync Index</strong> in the top right header to scan your library directory and populate the gallery index.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Folder Scope Navigation */}
           <FolderBreadcrumbs
             currentFolder={currentFolder}
@@ -106,12 +136,10 @@ export const GalleryTab: React.FC = () => {
             onOpenModal={handleOpenFolderModal}
           />
 
-          {/* Search & Sync Toolbar */}
+          {/* Search Toolbar */}
           <GalleryToolbar
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
-            onSync={handleSyncIndex}
-            isSyncing={isSyncing}
           />
 
           {/* Active Tag Filter Badges */}
@@ -153,6 +181,15 @@ export const GalleryTab: React.FC = () => {
             onDeselectAll={deselectAllOnPage}
             onImageClick={(img) => fetchImageDetail(img.id)}
             loading={loading}
+            totalImages={totalImages}
+            hasActiveFilters={Boolean(searchQuery || selectedTags.size > 0 || currentFolder)}
+            onSync={handleSyncIndex}
+            isSyncing={isSyncing}
+            onClearFilters={() => {
+              clearTagFilters();
+              setCurrentFolder('');
+              setSearchQuery('');
+            }}
           />
 
           {/* Pagination Footer */}
