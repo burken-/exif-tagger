@@ -5,14 +5,13 @@ services:
     ports:
       - "8080:8080"                    # Dashboard web interface
     volumes:
-      - ./config.yaml:/app/config.yaml:ro        # Config file (read-only)
-      - schedules:/app/schedules.json              # Persistent schedule storage
+      - ./data:/app/data                           # Single persistent volume for config, db, schedules
       - gallery:/data/images                       # Full image gallery mount
     environment:
+      EXIFTAGGER_DATA_DIR: "/app/data"
       EXIFTAGGER_ROOT_DIRECTORY: "/data/images"
       # Uncomment and set if you want to override api_key via env:
       # OPENAI_API_KEY: "sk-your-key-here"
 
 volumes:
-  schedules:                                       # Named volume for schedule persistence
   gallery:                                         # Named volume as default gallery mount point

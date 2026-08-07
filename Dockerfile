@@ -26,6 +26,8 @@ FROM python:3.12-alpine
 
 WORKDIR /app
 
+ENV EXIFTAGGER_DATA_DIR=/app/data
+
 # Install exiftool via apk (pre-built, avoids CPAN test failures)
 RUN apk add --no-cache perl exiftool
 
@@ -40,7 +42,7 @@ COPY config.yaml.example ./config.yaml.example
 COPY pyproject.toml .
 
 RUN pip install -e . --no-cache-dir && \
-    mkdir -p /data/images /app/data /app/config
+    mkdir -p /data/images /app/data
 
 # Expose dashboard port
 EXPOSE 8080

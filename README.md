@@ -52,10 +52,13 @@ pyproject.toml              # Python ≥3.12, setuptools build system
 
 ### 1. Docker (recommended)
 
+All application state (`config.yaml`, SQLite database `gallery.db`, `schedules.json`) is stored in `/app/data` via `EXIFTAGGER_DATA_DIR=/app/data`, requiring a single persistent volume mount (`./data:/app/data`).
+
 ```bash
-# Copy and customize the example config
-cp config.yaml.example config.yaml
-# Edit config.yaml: set root_directory, model endpoint, API key
+# Create local data directory and set up configuration
+mkdir -p data
+cp config.yaml.example data/config.yaml
+# Edit data/config.yaml: set root_directory, model endpoint, API key
 
 # Run with docker-compose
 docker compose run --rm exif-tagger
@@ -111,14 +114,15 @@ tags:                                 # Tag definitions with descriptions + thre
 
 All config values can be overridden with `EXIFTAGGER_` prefixed variables:
 
-| Env Var | YAML Path | Example |
-|---------|-----------|---------|
-| `EXIFTAGGER_ROOT_DIRECTORY` | root_directory | `/data/images` |
-| `EXIFTAGGER_CONFIG_FILE` | – | `/path/to/custom/config.yaml` |
-| `EXIFTAGGER_MODEL_BASE_URL` | model.base_url | `https://ollama.local:11434/v1` |
-| `EXIFTAGGER_MODEL_MODEL_NAME` | model.model_name | `llava` |
-| `EXIFTAGGER_MODEL_API_KEY` | model.api_key | `sk-...` |
-| `OPENAI_API_KEY` (standard) | model.api_key fallback | `sk-...` |
+| Env Var | YAML Path | Example | Description |
+|---------|-----------|---------|-------------|
+| `EXIFTAGGER_DATA_DIR` | – | `/app/data` | Single volume directory for config, DB (`gallery.db`), and `schedules.json` |
+| `EXIFTAGGER_ROOT_DIRECTORY` | root_directory | `/data/images` | Directory tree containing images to scan and tag |
+| `EXIFTAGGER_CONFIG_FILE` | – | `/path/to/custom/config.yaml` | Explicit path override for `config.yaml` |
+| `EXIFTAGGER_MODEL_BASE_URL` | model.base_url | `https://ollama.local:11434/v1` | Base URL for OpenAI-compatible API |
+| `EXIFTAGGER_MODEL_MODEL_NAME` | model.model_name | `llava` | Model identifier |
+| `EXIFTAGGER_MODEL_API_KEY` | model.api_key | `sk-...` | API key for vision model endpoint |
+| `OPENAI_API_KEY` (standard) | model.api_key fallback | `sk-...` | Standard OpenAI API key environment fallback |
 
 ## 🖥️ CLI Reference
 
