@@ -464,8 +464,9 @@ def api_get_gallery_images(
     limit: int = 50,
     tags: str | None = None,
     search: str | None = None,
+    folder: str | None = None,
 ):
-    """List images with pagination and optional tag/search filtering."""
+    """List images with pagination and optional tag/search/folder filtering."""
     try:
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
         images, total = get_gallery_images(
@@ -473,6 +474,7 @@ def api_get_gallery_images(
             limit=limit,
             tags=tag_list,
             search=search,
+            folder=folder,
         )
         return {
             "images": images,
@@ -482,6 +484,18 @@ def api_get_gallery_images(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to query gallery images: {e}")
+
+
+@app.get("/api/gallery/folders")
+def api_get_gallery_folders(path: str = ""):
+    """Get folder hierarchy and subfolder image counts for gallery folder navigation."""
+    from exif_tagger.db import get_gallery_folders
+    try:
+        data = get_gallery_folders(relative_path=path)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to query gallery folders: {e}")
+
 
 
 @app.get("/api/gallery/tags")

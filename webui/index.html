@@ -75,6 +75,17 @@
                     </div>
                 </div>
 
+                <!-- Folder Navigation Scope -->
+                <div class="folder-bar card-sub" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; padding:10px 16px; background:rgba(255,255,255,0.03); border-radius:6px;">
+                    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                        <span style="font-weight:600; font-size:0.85rem; color:#aaa;">Folder Scope:</span>
+                        <div id="folder-breadcrumbs" class="folder-breadcrumbs" style="display:flex; gap:4px; align-items:center; font-size:0.85rem;">
+                            <span class="breadcrumb-item active" data-path="" style="cursor:pointer; color:#4a9eff;">📁 Root</span>
+                        </div>
+                    </div>
+                    <button id="btn-open-folder-modal" class="btn btn-secondary btn-sm" style="padding:4px 10px; font-size:0.8rem;">📁 Select Folder</button>
+                </div>
+
                 <!-- Tag Filter Section -->
                 <div class="gallery-filters card-sub">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -89,12 +100,8 @@
                 <!-- Action & Search Toolbar -->
                 <div class="gallery-toolbar card-sub">
                     <div class="form-row" style="align-items:center;">
-                        <div class="form-group" style="flex:2; margin-bottom:0;">
-                            <input type="text" id="gallery-search-input" placeholder="Search by filename or path...">
-                        </div>
-                        <div class="button-row" style="margin-top:0;">
-                            <button id="btn-select-all-page" class="btn btn-secondary">Select All (Page)</button>
-                            <button id="btn-deselect-all" class="btn btn-secondary">Deselect All</button>
+                        <div class="form-group" style="flex:1; margin-bottom:0;">
+                            <input type="text" id="gallery-search-input" placeholder="Search by filename or glob pattern (e.g. *.jpg, vacation/*.png)...">
                         </div>
                     </div>
 
@@ -114,19 +121,37 @@
                         <button id="btn-apply-batch" class="btn btn-primary" disabled>Apply Batch Tags</button>
                     </div>
 
-                    <!-- Global Tag Removal -->
+                    <!-- Global Tag Removal Form (Aligned) -->
                     <div class="global-remove-panel" style="margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.1);">
                         <h4 style="margin:0 0 8px 0; font-size:0.9rem; color:#ff4a4a;">Remove Tag from ALL Photos in Gallery</h4>
-                        <div class="form-row" style="align-items:flex-end;">
-                            <div class="form-group" style="flex:1;">
-                                <label for="global-tag-input">Tag Name to Remove Everywhere</label>
-                                <input type="text" id="global-tag-input" list="existing-tags-datalist" placeholder="Select or type tag name...">
+                        <div style="display:flex; align-items:stretch; gap:12px;">
+                            <div style="flex:1; display:flex; flex-direction:column;">
+                                <label for="global-tag-input" style="font-size:0.8rem; color:#aaa; margin-bottom:4px;">Tag Name to Remove Everywhere</label>
+                                <input type="text" id="global-tag-input" list="existing-tags-datalist" placeholder="Select or type tag name..." style="height:38px;">
                                 <datalist id="existing-tags-datalist"></datalist>
                             </div>
-                            <div class="form-group" style="margin-bottom:0;">
-                                <button id="btn-remove-global-tag" class="btn btn-danger">Remove Tag Globally</button>
+                            <div style="display:flex; align-items:flex-end;">
+                                <button id="btn-remove-global-tag" class="btn btn-danger" style="height:38px; white-space:nowrap;">Remove Tag Globally</button>
                             </div>
                         </div>
+                    </div>
+                </div>
+
+                <!-- Selection Action Bar (Moved above grid) -->
+                <div class="gallery-grid-actions" style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; margin-bottom:8px; padding:6px 12px; background:rgba(255,255,255,0.03); border-radius:6px;">
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <button id="btn-select-all-page" class="btn btn-secondary btn-sm">Select All (Page)</button>
+                        <button id="btn-deselect-all" class="btn btn-secondary btn-sm">Deselect All</button>
+                        <span style="font-size:0.85rem; color:#888; margin-left:8px;"><span id="grid-selection-count">0</span> selected on page</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px;">
+                        <label for="page-size-select" style="font-size:0.85rem; color:#aaa;">Per page:</label>
+                        <select id="page-size-select" class="form-control-sm" style="background:#222; color:#fff; border:1px solid #444; border-radius:4px; padding:4px 8px;">
+                            <option value="24">24</option>
+                            <option value="48" selected>48</option>
+                            <option value="96">96</option>
+                            <option value="192">192</option>
+                        </select>
                     </div>
                 </div>
 
@@ -135,14 +160,23 @@
                     <div class="empty-gallery-msg">No images found matching criteria.</div>
                 </div>
 
-                <!-- Pagination Footer -->
-                <div class="gallery-pagination">
-                    <button id="btn-prev-page" class="btn btn-secondary" disabled>&laquo; Previous</button>
-                    <span id="pagination-info">Page 1 of 1 (0 total images)</span>
-                    <button id="btn-next-page" class="btn btn-secondary" disabled>Next &raquo;</button>
+                <!-- Google-Style Numbered Pagination Footer -->
+                <div class="gallery-pagination" style="display:flex; justify-content:space-between; align-items:center; margin-top:16px; flex-wrap:wrap; gap:12px;">
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <button id="btn-prev-page" class="btn btn-secondary btn-sm" disabled>&laquo; Previous</button>
+                        <div id="pagination-numbers" style="display:flex; gap:4px;"></div>
+                        <button id="btn-next-page" class="btn btn-secondary btn-sm" disabled>Next &raquo;</button>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:8px; font-size:0.85rem;">
+                        <span id="pagination-info">Page 1 of 1 (0 total)</span>
+                        <span style="color:#555;">|</span>
+                        <label for="page-jump-input" style="color:#aaa;">Go to page:</label>
+                        <input type="number" id="page-jump-input" min="1" style="width:55px; padding:2px 6px; text-align:center; background:#222; border:1px solid #444; color:#fff; border-radius:4px;">
+                    </div>
                 </div>
             </div>
         </section>
+
 
         <!-- Config Tab -->
         <section id="tab-config" class="tab-content">
@@ -324,7 +358,30 @@
         </div>
     </div>
 
+    <!-- Directory Explorer Modal -->
+    <div id="folder-modal" class="modal-backdrop" style="display:none;">
+        <div class="modal-content" style="max-width:550px; background:#1e1e24; border:1px solid rgba(255,255,255,0.1); border-radius:12px; padding:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:10px;">
+                <h3 style="margin:0; font-size:1.1rem; color:#fff;">📁 Directory Scope Selector</h3>
+                <button id="folder-modal-close" class="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom:12px; font-size:0.85rem; color:#aaa;">
+                    Current path: <div id="modal-folder-breadcrumbs" class="folder-breadcrumbs" style="display:inline-flex; gap:4px; margin-left:6px;"></div>
+                </div>
+                <div id="modal-folder-list" class="folder-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; max-height:300px; overflow-y:auto; padding:4px; margin-bottom:16px;">
+                    <div style="color:#888; font-size:0.85rem;">Loading subfolders...</div>
+                </div>
+                <div class="button-row" style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,0.1); padding-top:12px;">
+                    <button id="btn-select-current-folder" class="btn btn-primary" style="padding:6px 16px;">Select This Folder</button>
+                    <button id="btn-cancel-folder-modal" class="btn btn-secondary" style="padding:6px 16px;">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="toast-container"></div>
+
 
     <script src="/js/app.js"></script>
 </body>

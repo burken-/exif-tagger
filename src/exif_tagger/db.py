@@ -247,11 +247,13 @@ def get_gallery_images(
     limit: int = 50,
     tags: list[str] | None = None,
     search: str | None = None,
+    folder: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Retrieve paginated images matching optional tag filter (ANY of selected tags) or search string.
+    """Retrieve paginated images matching optional tag filter, folder scope, or search/glob string.
 
     Returns (images_list, total_count).
     """
+    import fnmatch
     init_db(db_path)
     conn = get_connection(db_path)
     try:
@@ -269,25 +271,50 @@ def get_gallery_images(
             """)
             params.extend(clean_tags)
 
-        if search:
+        if folder:
+            clean_folder = folder.strip().strip("/").lower()
+            if clean_folder and clean_folder != ".":
+                where_clauses.append("(LOWER(relative_path) LIKE ? OR LOWER(relative_path) = ?)")
+                params.extend([f"{clean_folder}/%", clean_folder])
+
+        has_glob = search and any(char in search for char in ("*", "?", "["))
+        if search and not has_glob:
             search_pattern = f"%{search.strip().lower()}%"
             where_clauses.append("(LOWER(filename) LIKE ? OR LOWER(relative_path) LIKE ?)")
             params.extend([search_pattern, search_pattern])
 
         where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
-        count_sql = f"SELECT COUNT(*) as cnt FROM images {where_sql}"
-        total_count = conn.execute(count_sql, params).fetchone()["cnt"]
+        if not has_glob:
+            count_sql = f"SELECT COUNT(*) as cnt FROM images {where_sql}"
+            total_count = conn.execute(count_sql, params).fetchone()["cnt"]
 
-        query_sql = f"""
-            SELECT id, file_path, filename, relative_path, last_modified
-            FROM images
-            {where_sql}
-            ORDER BY filename ASC, id ASC
-            LIMIT ? OFFSET ?
-        """
-        query_params = list(params) + [limit, offset]
-        rows = conn.execute(query_sql, query_params).fetchall()
+            query_sql = f"""
+                SELECT id, file_path, filename, relative_path, last_modified
+                FROM images
+                {where_sql}
+                ORDER BY filename ASC, id ASC
+                LIMIT ? OFFSET ?
+            """
+            query_params = list(params) + [limit, offset]
+            rows = conn.execute(query_sql, query_params).fetchall()
+        else:
+            # Glob search filtering using fnmatch
+            all_rows = conn.execute(
+                f"SELECT id, file_path, filename, relative_path, last_modified FROM images {where_sql} ORDER BY filename ASC, id ASC",
+                params,
+            ).fetchall()
+
+            glob_pattern = search.strip().lower()  # type: ignore[union-attr]
+            matching_rows = []
+            for r in all_rows:
+                fname = r["filename"].lower()
+                rel_p = r["relative_path"].lower()
+                if fnmatch.fnmatch(fname, glob_pattern) or fnmatch.fnmatch(rel_p, glob_pattern):
+                    matching_rows.append(r)
+
+            total_count = len(matching_rows)
+            rows = matching_rows[offset: offset + limit]
 
         image_ids = [row["id"] for row in rows]
         tags_map: dict[int, list[str]] = {img_id: [] for img_id in image_ids}
@@ -315,6 +342,60 @@ def get_gallery_images(
         return results, total_count
     finally:
         conn.close()
+
+
+def get_gallery_folders(
+    relative_path: str = "",
+    db_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Get subdirectories under relative_path with image count badges."""
+    init_db(db_path)
+    conn = get_connection(db_path)
+    try:
+        clean_rel = relative_path.strip().strip("/").lower()
+        rows = conn.execute("SELECT relative_path FROM images").fetchall()
+
+        subfolders: dict[str, int] = {}
+        for r in rows:
+            rel_p = r["relative_path"].replace("\\", "/")
+            parts = [p for p in rel_p.split("/") if p]
+            if not clean_rel or clean_rel == ".":
+                if len(parts) > 1:
+                    child_folder = parts[0]
+                    subfolders[child_folder] = subfolders.get(child_folder, 0) + 1
+            else:
+                rel_parts = [p for p in clean_rel.split("/") if p]
+                depth = len(rel_parts)
+                if len(parts) > depth + 1 and [p.lower() for p in parts[:depth]] == rel_parts:
+                    child_folder = parts[depth]
+                    subfolders[child_folder] = subfolders.get(child_folder, 0) + 1
+
+
+        folders_list = []
+        for name in sorted(subfolders.keys()):
+            full_path = f"{clean_rel}/{name}" if clean_rel else name
+            folders_list.append({
+                "name": name,
+                "relative_path": full_path,
+                "image_count": subfolders[name],
+            })
+
+        breadcrumbs = [{"name": "Root", "path": ""}]
+        if clean_rel:
+            accum = []
+            for part in clean_rel.split("/"):
+                accum.append(part)
+                breadcrumbs.append({"name": part, "path": "/".join(accum)})
+
+        return {
+            "current_path": clean_rel,
+            "breadcrumbs": breadcrumbs,
+            "folders": folders_list,
+            "total_images": len(rows),
+        }
+    finally:
+        conn.close()
+
 
 
 def get_all_tags(db_path: str | Path | None = None) -> list[str]:

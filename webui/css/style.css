@@ -847,3 +847,81 @@ td {
     margin-bottom: 12px;
 }
 
+/* Folder Navigation & Explorer */
+.folder-breadcrumbs .breadcrumb-item {
+    cursor: pointer;
+    color: #4a9eff;
+    font-weight: 500;
+    transition: color 0.15s ease;
+}
+.folder-breadcrumbs .breadcrumb-item:hover {
+    color: #818cf8;
+    text-decoration: underline;
+}
+.folder-breadcrumbs .breadcrumb-item::after {
+    content: " / ";
+    color: #666;
+    margin: 0 4px;
+    text-decoration: none !important;
+}
+.folder-breadcrumbs .breadcrumb-item:last-child::after {
+    content: "";
+}
+
+.folder-card {
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+.folder-card:hover {
+    background: rgba(99, 102, 241, 0.15);
+    border-color: #6366f1;
+    transform: translateY(-1px);
+}
+.folder-card-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #e2e8f0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.folder-card-count {
+    font-size: 0.75rem;
+    background: rgba(99, 102, 241, 0.3);
+    color: #c7d2fe;
+    padding: 2px 6px;
+    border-radius: 9999px;
+}
+
+/* Google-Style Page Buttons */
+.page-num-btn {
+    padding: 4px 10px;
+    font-size: 0.82rem;
+    background: #1f2937;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.page-num-btn:hover {
+    background: #374151;
+    color: #ffffff;
+}
+.page-num-btn.active {
+    background: var(--accent-gradient);
+    border-color: transparent;
+    color: #ffffff;
+    font-weight: bold;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+}
+
+
