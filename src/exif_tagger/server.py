@@ -603,27 +603,58 @@ def api_delete_gallery_image_suppression(image_id: int, tag_name: str):
 
 
 
+from fastapi.staticfiles import StaticFiles
+
 # ---------------------------------------------------------------------------
 # UI Routes — serve the dashboard
 # ---------------------------------------------------------------------------
 
 WEBUI_DIR = Path(__file__).parent.parent.parent / "webui"
+WEBUI_DIST_DIR = WEBUI_DIR / "dist"
+
+assets_dir = WEBUI_DIST_DIR / "assets"
+if not assets_dir.exists():
+    assets_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+
+def _get_index_response() -> FileResponse:
+    """Return compiled dist/index.html if built, otherwise fallback to webui/index.html."""
+    dist_index = WEBUI_DIST_DIR / "index.html"
+    if dist_index.exists():
+        return FileResponse(dist_index)
+    return FileResponse(WEBUI_DIR / "index.html")
 
 
 @app.get("/")
 def index():
     """Serve the main dashboard page."""
-    return FileResponse(WEBUI_DIR / "index.html")
+    return _get_index_response()
+
+
+@app.get("/processing")
+@app.get("/gallery")
+@app.get("/config")
+@app.get("/schedule")
+def ui_routes():
+    """Support direct SPA routing to dashboard tabs."""
+    return _get_index_response()
 
 
 @app.get("/css/style.css")
 def serve_css():
-    return FileResponse(WEBUI_DIR / "css" / "style.css")
+    css_file = WEBUI_DIR / "css" / "style.css"
+    if css_file.exists():
+        return FileResponse(css_file)
+    return _get_index_response()
 
 
 @app.get("/js/app.js")
 def serve_js():
-    return FileResponse(WEBUI_DIR / "js" / "app.js")
+    js_file = WEBUI_DIR / "js" / "app.js"
+    if js_file.exists():
+        return FileResponse(js_file)
+    return _get_index_response()
 
 
 # ---------------------------------------------------------------------------

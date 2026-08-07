@@ -1,8 +1,18 @@
 # ============================================================================
 # exif-tagger – Multi-stage build for web dashboard service
-# Stage 1: Build Python dependencies (fast, cached)
-# Stage 2: Install system tools + runtime image
+# Stage 1: Build Web UI static bundle
+# Stage 2: Build Python dependencies (fast, cached)
+# Stage 3: Install system tools + runtime image
 # ============================================================================
+
+FROM node:20-alpine AS frontend-builder
+
+WORKDIR /app/webui
+COPY webui/package*.json ./
+RUN npm ci || npm install
+COPY webui/ ./
+RUN npm run build
+
 
 FROM python:3.12-alpine AS builder
 
@@ -25,6 +35,7 @@ COPY --from=builder /install /usr/local
 # Copy application source and install as package so imports resolve
 COPY src/ ./src/
 COPY webui/ ./webui/
+COPY --from=frontend-builder /app/webui/dist ./webui/dist
 COPY config.yaml.example ./config.yaml.example
 COPY pyproject.toml .
 
