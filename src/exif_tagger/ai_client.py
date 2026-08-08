@@ -194,6 +194,79 @@ def _parse_response(content: str) -> TaggingResponse:
     return TaggingResponse(results=tag_results, summary=parsed.get("summary"))
 
 
+def _log_api_error_details(
+    image_path: Path,
+    attempt: int,
+    max_retries: int,
+    model_config: ModelConfig,
+    prompt: str,
+    image_b64_len: int,
+    exc: Exception,
+) -> None:
+    """Log structured multi-line block with request and response details on external API error."""
+    request_obj = getattr(exc, "request", None)
+    url = getattr(request_obj, "url", None) or model_config.base_url
+
+    raw_req_headers = getattr(request_obj, "headers", {}) or {}
+    sanitized_req_headers: dict[str, str] = {}
+    if isinstance(raw_req_headers, dict) or hasattr(raw_req_headers, "items"):
+        for k, v in raw_req_headers.items():
+            k_str = str(k)
+            v_str = str(v)
+            if k_str.lower() in ("authorization", "api-key", "x-api-key") or "sk-" in v_str:
+                sanitized_req_headers[k_str] = "[REDACTED]"
+            else:
+                sanitized_req_headers[k_str] = v_str
+
+    if not sanitized_req_headers:
+        sanitized_req_headers = {
+            "Authorization": "[REDACTED]",
+            "Content-Type": "application/json",
+        }
+
+    prompt_snippet = prompt[:200] + "..." if len(prompt) > 200 else prompt
+    payload_summary = {
+        "model": model_config.model_name,
+        "max_tokens": model_config.max_tokens,
+        "temperature": model_config.temperature,
+        "base_url": model_config.base_url,
+        "prompt_snippet": prompt_snippet,
+        "image_b64_length": image_b64_len,
+    }
+
+    response_obj = getattr(exc, "response", None)
+    status_code = getattr(response_obj, "status_code", None)
+    if status_code is None:
+        status_code = getattr(exc, "status_code", "N/A")
+
+    resp_headers = getattr(response_obj, "headers", None)
+    if resp_headers is None:
+        resp_headers = getattr(exc, "headers", "N/A")
+    elif hasattr(resp_headers, "items") and not isinstance(resp_headers, dict):
+        resp_headers = dict(resp_headers)
+
+    resp_body = getattr(response_obj, "text", None)
+    if resp_body is None:
+        resp_body = getattr(exc, "body", None)
+    if resp_body is None:
+        resp_body = str(exc)
+
+    error_log = (
+        f"\n================ EXTERNAL API REQUEST ERROR ================\n"
+        f"Target URL: {url}\n"
+        f"HTTP Method: POST\n"
+        f"Image: {image_path.name} (Attempt {attempt}/{max_retries})\n"
+        f"Request Headers:\n  {sanitized_req_headers}\n"
+        f"Request Payload Summary:\n  {payload_summary}\n"
+        f"---------------- HTTP RESPONSE DETAILS ----------------\n"
+        f"HTTP Status Code: {status_code}\n"
+        f"Response Headers:\n  {resp_headers}\n"
+        f"Response Body / Details:\n  {resp_body}\n"
+        f"==========================================================="
+    )
+    logger.error(error_log)
+
+
 def _build_structured_output_config() -> dict:
     """Build the response_format config for OpenAI structured outputs."""
     schema = TaggingResponse.model_json_schema()
@@ -292,6 +365,15 @@ def _call_vision_api(
 
         except Exception as exc:
             last_error = exc
+            _log_api_error_details(
+                image_path=image_path,
+                attempt=attempt,
+                max_retries=MAX_RETRIES,
+                model_config=model_config,
+                prompt=final_prompt,
+                image_b64_len=len(image_b64),
+                exc=exc,
+            )
             logger.warning(
                 "Vision API attempt %d/%d failed for %s: %s",
                 attempt, MAX_RETRIES, image_path.name, exc,
