@@ -8,6 +8,7 @@ import logging
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 from openai import OpenAI
 from PIL import Image
@@ -185,8 +186,17 @@ def _call_vision_api(
     """Call the vision API with retries. Raises on persistent failure."""
     image_b64 = _image_to_base64(image_path, max_dim=max_dim)
 
+    # Extract system_prompt and user_prompt from params if present
+    params_copy = dict(model_config.params or {})
+    system_prompt = params_copy.pop("system_prompt", None)
+    user_prompt_extra = params_copy.pop("user_prompt", None)
+
+    final_prompt = prompt
+    if user_prompt_extra:
+        final_prompt = f"{user_prompt_extra}\n\n{prompt}"
+
     content_parts = [
-        {"type": "text", "text": prompt},
+        {"type": "text", "text": final_prompt},
         {
             "type": "image_url",
             "image_url": {
@@ -194,6 +204,31 @@ def _call_vision_api(
             },
         },
     ]
+
+    messages: list[dict[str, Any]] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": content_parts})
+
+    # Standard OpenAI kwargs accepted by client.chat.completions.create
+    known_openai_kwargs = {
+        "model", "messages", "max_tokens", "temperature", "top_p", "n", "stream",
+        "stop", "presence_penalty", "frequency_penalty", "logit_bias", "user",
+        "response_format", "seed", "tools", "tool_choice", "reasoning_effort",
+        "extra_body", "timeout", "extra_headers", "extra_query"
+    }
+
+    top_level_kwargs: dict[str, Any] = {}
+    extra_body: dict[str, Any] = dict(params_copy.pop("extra_body", {}) or {})
+
+    for k, v in params_copy.items():
+        if k in known_openai_kwargs:
+            top_level_kwargs[k] = v
+        else:
+            extra_body[k] = v
+
+    if extra_body:
+        top_level_kwargs["extra_body"] = extra_body
 
     kwargs: dict = {}
     if hasattr(model_config, "extra") and model_config.extra:  # type: ignore[attr-defined]
@@ -209,14 +244,13 @@ def _call_vision_api(
                 api_key=model_config.api_key or "",
             )
 
-            # Merge extra params with explicit fields taking priority
-            api_kwargs = {**model_config.params}
-            api_kwargs.update({
+            api_kwargs = {
                 "model": model_config.model_name,
-                "messages": [{"role": "user", "content": content_parts}],
+                "messages": messages,
                 "max_tokens": model_config.max_tokens,
                 "temperature": model_config.temperature,
-            })
+                **top_level_kwargs,
+            }
 
             # Structured outputs: guarantee valid JSON matching our schema
             if model_config.use_structured_outputs:  # type: ignore[attr-defined]
