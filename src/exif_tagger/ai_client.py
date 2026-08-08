@@ -8,6 +8,7 @@ import logging
 import re
 import time
 from pathlib import Path
+from typing import Any
 
 from openai import OpenAI
 from PIL import Image
