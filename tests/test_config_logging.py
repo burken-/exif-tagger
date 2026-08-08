@@ -1,5 +1,5 @@
-import os
 import pytest
+
 from exif_tagger.config import load_config
 from exif_tagger.models.schema import Config, ModelConfig
 

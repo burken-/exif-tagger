@@ -1,10 +1,12 @@
 import logging
-from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 import pytest
 from openai import APIError
+
 from exif_tagger.ai_client import _call_vision_api
 from exif_tagger.models.schema import ModelConfig
+
 
 def test_vision_api_error_logging_dumps_request_and_response(caplog, tmp_path):
     caplog.set_level(logging.ERROR)

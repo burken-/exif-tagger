@@ -1,10 +1,10 @@
 import logging
-from unittest.mock import patch
 from pathlib import Path
+from unittest.mock import patch
 
-from exif_tagger.models.schema import Config, ModelConfig
 from exif_tagger.ai_client import setup_secure_logging
 from exif_tagger.main import PipelineEngine
+from exif_tagger.models.schema import Config, ModelConfig
 
 DUMMY_MODEL = ModelConfig(base_url="http://localhost:11434/v1", model_name="gpt-4o")
 
@@ -50,8 +50,9 @@ def test_server_startup_configures_logging(tmp_path):
 
     with patch("exif_tagger.server.load_config", return_value=dummy_config):
         with patch("exif_tagger.server.setup_secure_logging") as mock_setup_logging:
-            from exif_tagger.server import lifespan, app
             import asyncio
+
+            from exif_tagger.server import app, lifespan
 
             async def run_lifespan():
                 async with lifespan(app):

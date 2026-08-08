@@ -55,7 +55,6 @@ SCHEDULES_FILE = get_schedules_file_path()
 SERVER_LOG_DIR = _config_dir / "server-log"
 SERVER_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-from exif_tagger.ai_client import SecretRedactor
 
 _log_formatter = logging.Formatter(
     '%(asctime)s [%(levelname)s] %(name)s: %(message)s',

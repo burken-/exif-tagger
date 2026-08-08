@@ -5,9 +5,9 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from logging.handlers import TimedRotatingFileHandler
 import re
 import time
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -58,10 +58,8 @@ def setup_secure_logging(
     log_dir: str = "/app/logs",
     logger_name: str = "exif_tagger",
 ) -> None:
-    if isinstance(level, str):
-        log_level = getattr(logging, level.upper(), logging.INFO)
-    else:
-        log_level = level
+    log_level = getattr(logging, level.upper(), logging.INFO) if isinstance(level, str) else level
+
 
     main_logger = logging.getLogger(logger_name)
     main_logger.setLevel(log_level)
