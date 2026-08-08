@@ -153,9 +153,12 @@ def _build_prompt(
     return "\n".join(lines)
 
 
-def _parse_response(content: str) -> TaggingResponse:
+def _parse_response(content: str | bytes) -> TaggingResponse:
     """Parse the AI's response string into a structured TaggingResponse."""
-    cleaned = content.strip()
+    if isinstance(content, bytes):
+        content = content.decode("utf-8", errors="replace")
+
+    cleaned = content.strip().lstrip("\ufeff")
 
     # Try to extract JSON from markdown code blocks if present
     if "```" in cleaned:
@@ -170,8 +173,21 @@ def _parse_response(content: str) -> TaggingResponse:
         cleaned = cleaned[brace_start : brace_end + 1]
 
     try:
-        parsed = json.loads(cleaned)
+        parsed = json.loads(cleaned, strict=False)
     except json.JSONDecodeError as exc:
+        if cleaned != content:
+            logger.error(
+                "Failed to parse JSON response: %s\nText passed to json.loads:\n%s\nRaw response:\n%s",
+                exc,
+                cleaned,
+                content,
+            )
+        else:
+            logger.error(
+                "Failed to parse JSON response: %s\nText passed to json.loads:\n%s",
+                exc,
+                cleaned,
+            )
         raise ValueError(f"AI did not return valid JSON: {exc}\nResponse: {content[:500]}") from exc
 
     raw_results = parsed.get("results", [])
