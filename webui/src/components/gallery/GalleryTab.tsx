@@ -55,7 +55,7 @@ export const GalleryTab: React.FC = () => {
   const [showManagementPanels, setShowManagementPanels] = useState(true);
 
   const handleOpenFolderModal = () => {
-    fetchFolders(currentFolder);
+    fetchFolders(currentFolder || '');
     setIsFolderModalOpen(true);
   };
 

@@ -34,7 +34,7 @@ export const ProcessingTab: React.FC = () => {
   const [isFolderModalOpen, setIsFolderModalOpen] = useState(false);
 
   const handleBrowseFolders = () => {
-    fetchFolders('');
+    fetchFolders(folderPath);
     setIsFolderModalOpen(true);
   };
 
