@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import re
 import time
 from pathlib import Path
@@ -29,6 +30,9 @@ class SecretRedactor(logging.Filter):
         r'api_key[=:]\s*["\']?[^\s"\']+["\']?',
         r'Bearer\s+[a-zA-Z0-9\-_]+',
         r'sk-[a-fA-F0-9]{64}',
+        r'Authorization:\s*[^\s]+',
+        r'x-api-key:\s*[^\s]+',
+        r'api-key:\s*[^\s]+',
     ]
 
     def __init__(self, name: str = ""):
@@ -49,24 +53,49 @@ class SecretRedactor(logging.Filter):
         return True
 
 
-def setup_secure_logging(level: int = logging.INFO, logger_name: str = "exif_tagger") -> None:
+def setup_secure_logging(
+    level: int | str = logging.INFO,
+    log_dir: str = "/app/logs",
+    logger_name: str = "exif_tagger",
+) -> None:
+    if isinstance(level, str):
+        log_level = getattr(logging, level.upper(), logging.INFO)
+    else:
+        log_level = level
+
     main_logger = logging.getLogger(logger_name)
-    main_logger.setLevel(level)
+    main_logger.setLevel(log_level)
 
     if main_logger.handlers:
+        for handler in main_logger.handlers:
+            handler.setLevel(log_level)
         return
 
-    handler = logging.StreamHandler()
     formatter = logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%H:%M:%S'
     )
-    handler.setFormatter(formatter)
-
     redactor = SecretRedactor()
-    handler.addFilter(redactor)
 
-    main_logger.addHandler(handler)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    stream_handler.addFilter(redactor)
+    stream_handler.setLevel(log_level)
+    main_logger.addHandler(stream_handler)
+
+    log_path = Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+    file_handler = TimedRotatingFileHandler(
+        log_path / "exif-tagger.log",
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.addFilter(redactor)
+    file_handler.setLevel(log_level)
+    main_logger.addHandler(file_handler)
 
 
 MAX_IMAGE_DIMENSION = 1024
