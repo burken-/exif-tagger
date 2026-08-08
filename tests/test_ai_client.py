@@ -89,9 +89,35 @@ class TestParseResponse:
         assert len(result.results) == 1
         assert result.results[0].tag_name == "x"
 
-    def test_invalid_json_raises_value_error(self):
-        with pytest.raises(ValueError, match="did not return valid JSON"):
-            _parse_response("This is not JSON at all!!")
+    def test_invalid_json_logs_error_and_raises_value_error(self, caplog):
+        """When JSON is invalid, logger.error should record the JSONDecodeError details and attempted text."""
+        import logging
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(ValueError, match="did not return valid JSON"):
+                _parse_response("This is not JSON at all!!")
+
+        assert "Failed to parse JSON response" in caplog.text
+        assert "This is not JSON at all!!" in caplog.text
+
+    def test_parse_response_handles_bytes_input(self):
+        """_parse_response should accept bytes and decode UTF-8 correctly."""
+        raw_bytes = b'{"results": [{"tag_name": "landscape", "score": 0.9}]}'
+        result = _parse_response(raw_bytes)
+        assert len(result.results) == 1
+        assert result.results[0].tag_name == "landscape"
+
+    def test_parse_response_handles_utf8_bom(self):
+        """_parse_response should strip UTF-8 BOM if present."""
+        bom_str = '\ufeff{"results": [{"tag_name": "landscape", "score": 0.9}]}'
+        result = _parse_response(bom_str)
+        assert len(result.results) == 1
+
+    def test_parse_response_tolerates_unescaped_control_chars(self):
+        """_parse_response should parse JSON containing unescaped control chars via strict=False."""
+        control_char_str = '{"results": [{"tag_name": "landscape", "score": 0.9, "reason": "Line 1\nLine 2"}]}'
+        result = _parse_response(control_char_str)
+        assert len(result.results) == 1
+        assert result.results[0].reason == "Line 1\nLine 2"
 
     def test_score_clamped_to_valid_range(self):
         """Scores outside 0-1 should be clamped."""
