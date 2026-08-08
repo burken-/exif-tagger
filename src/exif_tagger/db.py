@@ -350,37 +350,62 @@ def get_gallery_images(
 def get_gallery_folders(
     relative_path: str = "",
     db_path: str | Path | None = None,
+    root_directory: str | Path | None = None,
 ) -> dict[str, Any]:
-    """Get subdirectories under relative_path with image count badges."""
+    """Get all subdirectories under relative_path (from disk and DB) with image count badges."""
+    from exif_tagger.config import load_config
+
     init_db(db_path)
     conn = get_connection(db_path)
     try:
-        clean_rel = relative_path.strip().strip("/").lower()
-        rows = conn.execute("SELECT relative_path FROM images").fetchall()
+        clean_rel = relative_path.strip().strip("/").replace("\\", "/")
+        if clean_rel == ".":
+            clean_rel = ""
 
-        subfolders: dict[str, int] = {}
+        # Determine root directory on disk
+        if root_directory is None:
+            config = load_config()
+            root_directory = config.root_directory
+
+        root_path = Path(root_directory).resolve()
+        target_dir = (root_path / clean_rel).resolve() if clean_rel else root_path
+
+        all_subfolders: set[str] = set()
+        subfolders_count: dict[str, int] = {}
+
+        # 1. Physical disk scan
+        if target_dir.exists() and target_dir.is_dir():
+            for item in target_dir.iterdir():
+                if item.is_dir() and not item.name.startswith("."):
+                    all_subfolders.add(item.name)
+
+        # 2. DB scan for image counts and DB-known folders
+        rows = conn.execute("SELECT relative_path FROM images").fetchall()
         for r in rows:
             rel_p = r["relative_path"].replace("\\", "/")
             parts = [p for p in rel_p.split("/") if p]
-            if not clean_rel or clean_rel == ".":
+            clean_rel_lower = clean_rel.lower()
+
+            if not clean_rel:
                 if len(parts) > 1:
                     child_folder = parts[0]
-                    subfolders[child_folder] = subfolders.get(child_folder, 0) + 1
+                    all_subfolders.add(child_folder)
+                    subfolders_count[child_folder] = subfolders_count.get(child_folder, 0) + 1
             else:
-                rel_parts = [p for p in clean_rel.split("/") if p]
+                rel_parts = [p.lower() for p in clean_rel_lower.split("/") if p]
                 depth = len(rel_parts)
                 if len(parts) > depth + 1 and [p.lower() for p in parts[:depth]] == rel_parts:
                     child_folder = parts[depth]
-                    subfolders[child_folder] = subfolders.get(child_folder, 0) + 1
-
+                    all_subfolders.add(child_folder)
+                    subfolders_count[child_folder] = subfolders_count.get(child_folder, 0) + 1
 
         folders_list = []
-        for name in sorted(subfolders.keys()):
+        for name in sorted(all_subfolders):
             full_path = f"{clean_rel}/{name}" if clean_rel else name
             folders_list.append({
                 "name": name,
                 "relative_path": full_path,
-                "image_count": subfolders[name],
+                "image_count": subfolders_count.get(name, 0),
             })
 
         breadcrumbs = [{"name": "Root", "path": ""}]
@@ -398,6 +423,7 @@ def get_gallery_folders(
         }
     finally:
         conn.close()
+
 
 
 
