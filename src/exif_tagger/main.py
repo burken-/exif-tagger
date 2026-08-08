@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from exif_tagger.ai_client import setup_secure_logging
+
 CHECKPOINT_BATCH_SIZE = 100
 ERRORS_TO_DISPLAY_MAX = 10
 
@@ -243,19 +245,23 @@ class PipelineEngine:
         max_images: int | None = None,
         force_resume: bool = False,
     ) -> dict:
-        from exif_tagger.ai_client import setup_secure_logging, tag_image_with_ai
+        from exif_tagger.ai_client import tag_image_with_ai
         from exif_tagger.exif_writer import tag_image_exif
 
-        log_level = logging.DEBUG if self.verbose else logging.INFO
-        setup_secure_logging(log_level)
+        state_handler = None
         logger = logging.getLogger("exif_tagger")
-
-        state_handler = StateLoggingHandler(self.state)
-        state_handler.setLevel(log_level)
-        logger.addHandler(state_handler)
 
         try:
             config = self._load_config(root_directory_override=root_directory)
+            config_log_level = getattr(config, "log_level", "INFO")
+            config_log_dir = getattr(config, "log_dir", "/app/logs")
+            log_level = logging.DEBUG if self.verbose else config_log_level
+            setup_secure_logging(level=log_level, log_dir=config_log_dir)
+
+            effective_level = logging.DEBUG if self.verbose else getattr(logging, str(config_log_level).upper(), logging.INFO)
+            state_handler = StateLoggingHandler(self.state)
+            state_handler.setLevel(effective_level)
+            logger.addHandler(state_handler)
 
             if not config.tags:
                 err_msg = "No tags configured"
@@ -464,7 +470,8 @@ class PipelineEngine:
             self.state.finish(summary)
             return {"error": str(exc), "exit_code": 1}
         finally:
-            logger.removeHandler(state_handler)
+            if state_handler:
+                logger.removeHandler(state_handler)
 
     def stop(self) -> dict:
         """Request graceful stop of current session."""

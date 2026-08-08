@@ -20,6 +20,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from exif_tagger.ai_client import SecretRedactor, setup_secure_logging
 from exif_tagger.config import get_config_path, load_config
 from exif_tagger.main import PipelineEngine
 from exif_tagger.models.schema import ScheduleModel, TagDefinition
@@ -54,7 +55,6 @@ SCHEDULES_FILE = get_schedules_file_path()
 SERVER_LOG_DIR = _config_dir / "server-log"
 SERVER_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-from exif_tagger.ai_client import SecretRedactor
 
 _log_formatter = logging.Formatter(
     '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
@@ -708,9 +708,18 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):  # type: ignore[no-untyped-def]
     """Lifespan context manager for startup and shutdown events."""
+    try:
+        config = load_config(CONFIG_PATH)
+        log_level = getattr(config, "log_level", "INFO")
+        log_dir = getattr(config, "log_dir", "/app/logs")
+        setup_secure_logging(level=log_level, log_dir=log_dir)
+    except Exception as exc:
+        setup_secure_logging()
+        logger.warning("Could not load config for server logging setup: %s", exc)
+
     logger.info("EXIF Tagger API starting up...")
     _setup_scheduler()
-    logger.info(f"Loaded {_schedules.__len__()} schedules")
+    logger.info(f"Loaded {len(_schedules)} schedules")
 
     # Start background gallery index sync
     threading.Thread(target=_sync_index_background, daemon=True).start()

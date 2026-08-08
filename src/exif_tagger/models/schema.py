@@ -92,6 +92,26 @@ class Config(BaseModel):
         le=4096,
         description="Maximal bilddimension (bred eller hög) innan skalning till AI-modellen.",
     )
+    log_level: str = Field(
+        default="INFO",
+        description="Global log level: DEBUG, INFO, WARNING, ERROR, CRITICAL",
+    )
+    log_dir: str = Field(
+        default="/app/logs",
+        description="Directory path for daily rotating log files",
+    )
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def _validate_log_level(cls, value: Any) -> str:
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if isinstance(value, str):
+            upper_val = value.strip().upper()
+            if upper_val in valid_levels:
+                return upper_val
+        raise ValueError(
+            f"Invalid log level '{value}'. Must be one of: {', '.join(sorted(valid_levels))}"
+        )
 
     # Validation & convenience methods
     def validate(self) -> None:

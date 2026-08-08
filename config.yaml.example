@@ -22,6 +22,11 @@ model:
 # Range: 100–4096, default: 720. Can also be set via env var EXIFTAGGER_MAX_IMAGE_DIMENSION.
 max_image_dimension: 720
 
+# Global log level (DEBUG, INFO, WARNING, ERROR, CRITICAL) and directory for daily rotating log files.
+# Can be overridden by env vars EXIFTAGGER_LOG_LEVEL and EXIFTAGGER_LOG_DIR.
+log_level: "INFO"
+log_dir: "/app/logs"
+
 # Tag definitions – each tag has a description and threshold (0-1)
 # Images scoring >= threshold will have the tag written to XPTags.
 tags:

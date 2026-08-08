@@ -7,6 +7,7 @@ import json
 import logging
 import re
 import time
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,9 @@ class SecretRedactor(logging.Filter):
         r'api_key[=:]\s*["\']?[^\s"\']+["\']?',
         r'Bearer\s+[a-zA-Z0-9\-_]+',
         r'sk-[a-fA-F0-9]{64}',
+        r'Authorization:\s*[^\s]+',
+        r'x-api-key:\s*[^\s]+',
+        r'api-key:\s*[^\s]+',
     ]
 
     def __init__(self, name: str = ""):
@@ -49,24 +53,47 @@ class SecretRedactor(logging.Filter):
         return True
 
 
-def setup_secure_logging(level: int = logging.INFO, logger_name: str = "exif_tagger") -> None:
+def setup_secure_logging(
+    level: int | str = logging.INFO,
+    log_dir: str = "/app/logs",
+    logger_name: str = "exif_tagger",
+) -> None:
+    log_level = getattr(logging, level.upper(), logging.INFO) if isinstance(level, str) else level
+
+
     main_logger = logging.getLogger(logger_name)
-    main_logger.setLevel(level)
+    main_logger.setLevel(log_level)
 
     if main_logger.handlers:
+        for handler in main_logger.handlers:
+            handler.setLevel(log_level)
         return
 
-    handler = logging.StreamHandler()
     formatter = logging.Formatter(
         '%(asctime)s [%(levelname)s] %(name)s: %(message)s',
         datefmt='%H:%M:%S'
     )
-    handler.setFormatter(formatter)
-
     redactor = SecretRedactor()
-    handler.addFilter(redactor)
 
-    main_logger.addHandler(handler)
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    stream_handler.addFilter(redactor)
+    stream_handler.setLevel(log_level)
+    main_logger.addHandler(stream_handler)
+
+    log_path = Path(log_dir)
+    log_path.mkdir(parents=True, exist_ok=True)
+    file_handler = TimedRotatingFileHandler(
+        log_path / "exif-tagger.log",
+        when="midnight",
+        interval=1,
+        backupCount=30,
+        encoding="utf-8",
+    )
+    file_handler.setFormatter(formatter)
+    file_handler.addFilter(redactor)
+    file_handler.setLevel(log_level)
+    main_logger.addHandler(file_handler)
 
 
 MAX_IMAGE_DIMENSION = 1024
@@ -163,6 +190,79 @@ def _parse_response(content: str) -> TaggingResponse:
             logger.warning("Skipping invalid tag result in AI response: %s", exc)
 
     return TaggingResponse(results=tag_results, summary=parsed.get("summary"))
+
+
+def _log_api_error_details(
+    image_path: Path,
+    attempt: int,
+    max_retries: int,
+    model_config: ModelConfig,
+    prompt: str,
+    image_b64_len: int,
+    exc: Exception,
+) -> None:
+    """Log structured multi-line block with request and response details on external API error."""
+    request_obj = getattr(exc, "request", None)
+    url = getattr(request_obj, "url", None) or model_config.base_url
+
+    raw_req_headers = getattr(request_obj, "headers", {}) or {}
+    sanitized_req_headers: dict[str, str] = {}
+    if isinstance(raw_req_headers, dict) or hasattr(raw_req_headers, "items"):
+        for k, v in raw_req_headers.items():
+            k_str = str(k)
+            v_str = str(v)
+            if k_str.lower() in ("authorization", "api-key", "x-api-key") or "sk-" in v_str:
+                sanitized_req_headers[k_str] = "[REDACTED]"
+            else:
+                sanitized_req_headers[k_str] = v_str
+
+    if not sanitized_req_headers:
+        sanitized_req_headers = {
+            "Authorization": "[REDACTED]",
+            "Content-Type": "application/json",
+        }
+
+    prompt_snippet = prompt[:200] + "..." if len(prompt) > 200 else prompt
+    payload_summary = {
+        "model": model_config.model_name,
+        "max_tokens": model_config.max_tokens,
+        "temperature": model_config.temperature,
+        "base_url": model_config.base_url,
+        "prompt_snippet": prompt_snippet,
+        "image_b64_length": image_b64_len,
+    }
+
+    response_obj = getattr(exc, "response", None)
+    status_code = getattr(response_obj, "status_code", None)
+    if status_code is None:
+        status_code = getattr(exc, "status_code", "N/A")
+
+    resp_headers = getattr(response_obj, "headers", None)
+    if resp_headers is None:
+        resp_headers = getattr(exc, "headers", "N/A")
+    elif hasattr(resp_headers, "items") and not isinstance(resp_headers, dict):
+        resp_headers = dict(resp_headers)
+
+    resp_body = getattr(response_obj, "text", None)
+    if resp_body is None:
+        resp_body = getattr(exc, "body", None)
+    if resp_body is None:
+        resp_body = str(exc)
+
+    error_log = (
+        f"\n================ EXTERNAL API REQUEST ERROR ================\n"
+        f"Target URL: {url}\n"
+        f"HTTP Method: POST\n"
+        f"Image: {image_path.name} (Attempt {attempt}/{max_retries})\n"
+        f"Request Headers:\n  {sanitized_req_headers}\n"
+        f"Request Payload Summary:\n  {payload_summary}\n"
+        f"---------------- HTTP RESPONSE DETAILS ----------------\n"
+        f"HTTP Status Code: {status_code}\n"
+        f"Response Headers:\n  {resp_headers}\n"
+        f"Response Body / Details:\n  {resp_body}\n"
+        f"==========================================================="
+    )
+    logger.error(error_log)
 
 
 def _build_structured_output_config() -> dict:
@@ -263,6 +363,15 @@ def _call_vision_api(
 
         except Exception as exc:
             last_error = exc
+            _log_api_error_details(
+                image_path=image_path,
+                attempt=attempt,
+                max_retries=MAX_RETRIES,
+                model_config=model_config,
+                prompt=final_prompt,
+                image_b64_len=len(image_b64),
+                exc=exc,
+            )
             logger.warning(
                 "Vision API attempt %d/%d failed for %s: %s",
                 attempt, MAX_RETRIES, image_path.name, exc,

@@ -31,6 +31,8 @@ ENV_MAPPING: dict[str, tuple[str, ...]] = {
     "EXIFTAGGER_MODEL_PARAMS": ("model", "params"),
     "EXIFTAGGER_EXCLUDE_PATTERNS": ("exclude_patterns",),
     "EXIFTAGGER_MAX_IMAGE_DIMENSION": ("max_image_dimension",),
+    "EXIFTAGGER_LOG_LEVEL": ("log_level",),
+    "EXIFTAGGER_LOG_DIR": ("log_dir",),
 }
 
 
