@@ -109,3 +109,34 @@ def test_get_gallery_images_glob_search(tmp_path: Path):
     # Search with glob pattern DSC_*
     images_dsc, total_dsc = get_gallery_images(search="DSC_*", db_path=db_file)
     assert total_dsc == 2
+
+
+def test_get_gallery_folders_unindexed_folders(tmp_path: Path):
+    db_file = tmp_path / "test_gallery.db"
+    init_db(db_file)
+
+    root = tmp_path / "gallery"
+    root.mkdir()
+
+    # Create folders on disk
+    (root / "indexed_folder").mkdir()
+    (root / "empty_unindexed_folder").mkdir()
+
+    img1 = root / "indexed_folder" / "photo.jpg"
+    Image.new("RGB", (50, 50), color="blue").save(img1, format="JPEG")
+
+    sync_gallery_index(root_directory=root, db_path=db_file)
+
+    # Now create an extra unindexed subfolder after sync
+    (root / "new_unindexed_dir").mkdir()
+
+    res = get_gallery_folders(relative_path="", db_path=db_file, root_directory=root)
+    folder_names = [f["name"] for f in res["folders"]]
+
+    assert "indexed_folder" in folder_names
+    assert "empty_unindexed_folder" in folder_names
+    assert "new_unindexed_dir" in folder_names
+
+    unindexed_item = next(f for f in res["folders"] if f["name"] == "new_unindexed_dir")
+    assert unindexed_item["image_count"] == 0
+
